@@ -130,7 +130,7 @@ const defArgs = {
     rootDir: opts.rootDir || './etc',
     env: opts.env || ['dev'],
     hostname: opts.host,
-    port: opts.port || 8080,
+    port: opts.port || 8099,
     gitReleaseName: gitReleaseName,
     travisBuildNumber: travisBuildNumber,
     wantedLanguage: opts.language || null,
@@ -198,7 +198,7 @@ const staticMaxAgeSecs = ceProps('staticMaxAgeSecs', 0);
 const maxUploadSize = ceProps('maxUploadSize', '1mb');
 const extraBodyClass = ceProps('extraBodyClass', isDevMode() ? 'dev' : '');
 const storageSolution = compilerProps.ceProps('storageSolution', 'local');
-const httpRoot = urljoin(ceProps('httpRoot', '/'), '/');
+const httpRoot = urljoin(ceProps('httpRoot', '/'), '/ce');
 
 const staticUrl = ceProps('staticUrl');
 const staticRoot = urljoin(staticUrl || urljoin(httpRoot, 'static'), '/');

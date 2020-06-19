@@ -1,0 +1,8 @@
+[Unit]
+After=network.service
+
+[Service]
+ExecStart=/home/ce/compiler-explorer/go.sh
+
+[Install]
+WantedBy=default.target

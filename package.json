@@ -35,8 +35,8 @@
     "fs-extra": "^8.1.0",
     "golden-layout": "^1.5.9",
     "html-loader": "^0.5.5",
-    "http-proxy": "^1.18.0",
-    "jquery": "^3.3.1",
+    "http-proxy": "^1.18.1",
+    "jquery": "^3.5.1",
     "js-cookie": "^2.2.1",
     "lodash": "^4.17.15",
     "lru-cache": "^5.1.1",
@@ -94,7 +94,7 @@
     "webpack": "^4.41.6",
     "webpack-cli": "^3.3.11",
     "webpack-dev-middleware": "^3.7.2",
-    "webpack-dev-server": "^3.10.3",
+    "webpack-dev-server": "^3.11.0",
     "webpack-manifest-plugin": "^2.2.0"
   },
   "scripts": {
