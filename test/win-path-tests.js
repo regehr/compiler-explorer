@@ -26,8 +26,7 @@ const chai = require('chai');
 
 const WslCL = require('../lib/compilers/wsl-vc');
 const WineCL = require('../lib/compilers/wine-vc');
-const CompilationEnvironment = require('../lib/compilation-env');
-const properties = require('../lib/properties');
+const {makeCompilationEnvironment} = require('./utils.js');
 
 chai.should();
 
@@ -45,8 +44,7 @@ describe('Paths', () => {
     let env;
 
     before(() => {
-        const compilerProps = new properties.CompilerProps(languages, properties.fakeProps({}));
-        env = new CompilationEnvironment(compilerProps);
+        env = makeCompilationEnvironment({languages});
     });
 
     it('Linux -> Wine path', () => {

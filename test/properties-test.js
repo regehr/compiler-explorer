@@ -41,6 +41,10 @@ describe('Properties', () => {
         }));
     });
 
+    after(() => {
+        properties.reset();
+    })
+
     it('Has working propsFor', () => {
         should.equal(properties.get("cases", "exampleProperty"), casesProps("exampleProperty"));
     });
@@ -146,6 +150,12 @@ describe('Properties', () => {
         should.equal(compilerProps.get('a', 'bar', true), false);
         compilerProps.get(languages, 'bar', true, undefined).should.deep.equal({a: false});
         compilerProps.propsByLangId[languages.a.id] = undefined;
+    });
+    it('should not parse version properies as numbers', () => {
+        should.equal(casesProps('libs.example.versions.010.version'), '0.10');
+    });
+    it('should not parse semver properies as numbers', () => {
+        should.equal(casesProps('compiler.example110.semver'), '1.10');
     });
 });
 

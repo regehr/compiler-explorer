@@ -132,6 +132,10 @@
                   | Automatically insert matching brackets and parentheses
               .checkbox
                 label
+                  input.autoIndent(type="checkbox")
+                  | Automatically indent code (reload page after changing)
+              .checkbox
+                label
                   input.hoverShowSource(type="checkbox")
                   | Highlight linked code lines on hover
               .checkbox
@@ -161,7 +165,7 @@
               div
                 label
                   | &nbsp;Tab width&nbsp;
-                  select.tabWidth
+                  input.tabWidth(type="numeric")
               div
                 label
                   | Format based on&nbsp;
@@ -263,7 +267,7 @@
                 a.nav-link(data-toggle="tab" role="tab" href="#load-history-diff-display" aria-controls="load-history-diff-display" aria-selected="false")
                   | Diff
 
-            div.tab-content#historyTabs(style="height:600px")
+            div.tab-content#historyTabs(style="height:600px;overflow-y:scroll")
               div.tab-pane.show.active#load-history(role="tabpanel")
                 ul.historiccode
                   li.template

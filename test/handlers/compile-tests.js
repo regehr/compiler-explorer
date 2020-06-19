@@ -25,11 +25,10 @@
 require('../../lib/handlers/compile').SetTestMode();
 
 const chai = require('chai'),
-    CompilationEnvironment = require('../../lib/compilation-env'),
     CompileHandler = require('../../lib/handlers/compile').Handler,
     express = require('express'),
     bodyParser = require('body-parser'),
-    properties = require('../../lib/properties');
+    {makeCompilationEnvironment} = require('../utils.js');
 chai.use(require("chai-http"));
 chai.should();
 
@@ -44,8 +43,7 @@ describe('Compiler tests', () => {
     let app, compileHandler;
 
     before(() => {
-        const compilerProps = new properties.CompilerProps(languages, properties.fakeProps({}));
-        const compilationEnvironment = new CompilationEnvironment(compilerProps);
+        const compilationEnvironment = makeCompilationEnvironment({languages});
         compileHandler = new CompileHandler(compilationEnvironment);
 
         app = express();
@@ -120,6 +118,7 @@ describe('Compiler tests', () => {
                     asm: [{text: "ASMASMASM"}],
                     code: 0,
                     input: {
+                        backendOptions: {},
                         filters: [],
                         options: [],
                         source: "I am a program"
@@ -186,6 +185,7 @@ describe('Compiler tests', () => {
                     throw err;
                 });
         });
+
         it('handles filters removed', () => {
             return makeFakeQuery("source", {filters: 'a,b,c', removeFilters: 'b,c,d'})
                 .then(res => {
@@ -198,6 +198,7 @@ describe('Compiler tests', () => {
                     throw err;
                 });
         });
+
         it('handles filters added and removed', () => {
             return makeFakeQuery("source", {filters: 'a,b,c', addFilters: 'c,g,h', removeFilters: 'b,c,d,h'})
                 .then(res => {

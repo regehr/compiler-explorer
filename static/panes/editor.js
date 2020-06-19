@@ -101,7 +101,7 @@ function Editor(hub, state, container) {
         folding: true,
         lineNumbersMinChars: 1,
         emptySelectionClipboard: true,
-        autoIndent: true,
+        autoIndent: this.settings.autoIndent ? "advanced" : "none",
         vimInUse: this.settings.useVim,
         fontLigatures: this.settings.editorsFLigatures
     });
@@ -397,7 +397,7 @@ Editor.prototype.initButtons = function (state) {
 
     // NB a new compilerConfig needs to be created every time; else the state is shared
     // between all compilers created this way. That leads to some nasty-to-find state
-    // bugs e.g. https://github.com/mattgodbolt/compiler-explorer/issues/225
+    // bugs e.g. https://github.com/compiler-explorer/compiler-explorer/issues/225
     var getCompilerConfig = _.bind(function () {
         return Components.getCompiler(this.id, this.currentLanguage.id);
     }, this);
@@ -487,17 +487,120 @@ Editor.prototype.asciiEncodeJsonText = function (json) {
     });
 };
 
+Editor.prototype.getCompilerStates = function () {
+    var states = [];
+
+    _.each(this.ourCompilers, _.bind(function (val, compilerIdStr) {
+        var compilerId = parseInt(compilerIdStr);
+
+        var glCompiler = _.find(this.container.layoutManager.root.getComponentsByName("compiler"), function (c) {
+            return c.id === compilerId;
+        });
+
+        if (glCompiler) {
+            var state = glCompiler.currentState();
+            states.push(state);
+        }
+    }, this));
+
+    return states;
+};
+
 Editor.prototype.updateOpenInCppInsights = function () {
-    var cppStd = 'cpp2a'; // if a compiler is linked, maybe we can find this out?
+    var cppStd = 'cpp2a';
+
+    var compilers = this.getCompilerStates();
+    _.each(compilers, _.bind(function (compiler) {
+        if ((compiler.options.indexOf("-std=c++11") !== -1) ||
+            (compiler.options.indexOf("-std=gnu++11") !== -1)) {
+            cppStd = "cpp11";
+        } else if ((compiler.options.indexOf("-std=c++14") !== -1) ||
+            (compiler.options.indexOf("-std=gnu++14") !== -1)) {
+            cppStd = "cpp14";
+        } else if ((compiler.options.indexOf("-std=c++17") !== -1) ||
+            (compiler.options.indexOf("-std=gnu++17") !== -1)) {
+            cppStd = "cpp17";
+        } else if ((compiler.options.indexOf("-std=c++2a") !== -1) ||
+            (compiler.options.indexOf("-std=gnu++2a") !== -1)) {
+            cppStd = "cpp2a";
+        } else if (compiler.options.indexOf("-std=c++98") !== -1) {
+            cppStd = "cpp98";
+        }
+    }, this));
+
     var link = 'https://cppinsights.io/lnk?code=' + this.b64UTFEncode(this.getSource()) + '&std=' + cppStd + '&rev=1.0';
 
     this.domRoot.find(".open-in-cppinsights").attr("href", link);
+};
+
+Editor.prototype.cleanupSemVer = function (semver) {
+    if (semver) {
+        var semverStr = semver.toString();
+        if ((semverStr !== "") && (semverStr.indexOf('(') === -1)) {
+            var vercomps = semverStr.split('.');
+            return vercomps[0] + '.' + (vercomps[1] ? vercomps[1] : '0');
+        }
+    }
+
+    return false;
 };
 
 Editor.prototype.updateOpenInQuickBench = function () {
     var quickBenchState = {
         text: this.getSource()
     };
+
+    var compilers = this.getCompilerStates();
+
+    _.each(compilers, _.bind(function (compiler) {
+        var knownCompiler = false;
+
+        var compilerExtInfo = this.hub.compilerService.findCompiler(this.currentLanguage.id, compiler.compiler);
+        var semver = this.cleanupSemVer(compilerExtInfo.semver);
+        var groupOrName =
+            compilerExtInfo.baseName ? compilerExtInfo.baseName :
+                compilerExtInfo.groupName ? compilerExtInfo.groupName : compilerExtInfo.name;
+
+        if (semver && groupOrName) {
+            groupOrName = groupOrName.toLowerCase();
+            if (groupOrName.indexOf('gcc') !== -1) {
+                quickBenchState.compiler = "gcc-" + semver;
+                knownCompiler = true;
+            } else if (groupOrName.indexOf('clang') !== -1) {
+                quickBenchState.compiler = "clang-" + semver;
+                knownCompiler = true;
+            }
+        }
+
+        if (knownCompiler) {
+            var match = compiler.options.match(/-(O([0-3sg]|fast))/);
+            if (match !== null) {
+                if (match[2] === "fast") {
+                    quickBenchState.optim = "F";
+                } else {
+                    quickBenchState.optim = match[2].toUpperCase();
+                }
+            }
+
+            if ((compiler.options.indexOf("-std=c++11") !== -1) ||
+                (compiler.options.indexOf("-std=gnu++11") !== -1)) {
+                quickBenchState.cppVersion = "11";
+            } else if ((compiler.options.indexOf("-std=c++14") !== -1) ||
+                (compiler.options.indexOf("-std=gnu++14") !== -1)) {
+                quickBenchState.cppVersion = "14";
+            } else if ((compiler.options.indexOf("-std=c++17") !== -1) ||
+                (compiler.options.indexOf("-std=gnu++17") !== -1)) {
+                quickBenchState.cppVersion = "17";
+            } else if ((compiler.options.indexOf("-std=c++2a") !== -1) ||
+                (compiler.options.indexOf("-std=gnu++2a") !== -1)) {
+                quickBenchState.cppVersion = "20";
+            }
+
+            if ((compiler.options.indexOf("-stdlib=libc++") !== -1)) {
+                quickBenchState.lib = "llvm";
+            }
+        }
+    }, this));
 
     var link = 'http://quick-bench.com/#' + btoa(this.asciiEncodeJsonText(JSON.stringify(quickBenchState)));
     this.domRoot.find(".open-in-quickbench").attr("href", link);
@@ -724,6 +827,7 @@ Editor.prototype.onSettingsChange = function (newSettings) {
     this.settings = _.clone(newSettings);
 
     this.editor.updateOptions({
+        autoIndent: this.settings.autoIndent ? "advanced" : "none",
         autoClosingBrackets: this.settings.autoCloseBrackets,
         useVim: this.settings.useVim,
         quickSuggestions: this.settings.showQuickSuggestions,

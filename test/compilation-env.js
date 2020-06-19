@@ -31,8 +31,8 @@ chai.use(chaiAsPromised);
 chai.should();
 
 const props = {
-    optionsWhitelistRe: '.*',
-    optionsBlacklistRe: '^(-W[alp],)?((-wrapper|-fplugin.*|-specs|-load|-plugin|(@.*)|-I|-i)(=.*)?|--)$',
+    optionsAllowedRe: '.*',
+    optionsForbiddenRe: '^(-W[alp],)?((-wrapper|-fplugin.*|-specs|-load|-plugin|(@.*)|-I|-i)(=.*)?|--)$',
     cacheConfig: 'InMemory(10)'
 };
 
@@ -51,13 +51,13 @@ describe('Compilation environment', () => {
             .then(() => ce.cacheGet('baz').should.eventually.equal(null));
     });
     it('Should cache when asked', () => {
-        const ce = new CompilationEnvironment(compilerProps, true);
+        const ce = new CompilationEnvironment(compilerProps, undefined, true);
         return ce.cacheGet('foo').should.eventually.equal(null)
             .then(() => ce.cachePut('foo', {res: 'bar'}))
             .then(() => ce.cacheGet('foo').should.eventually.eql({res: 'bar'}));
     });
     it('Shouldn\'t cache when asked', () => {
-        const ce = new CompilationEnvironment(compilerProps, false);
+        const ce = new CompilationEnvironment(compilerProps, undefined, false);
         return ce.cacheGet('foo').should.eventually.equal(null)
             .then(() => ce.cachePut('foo', {res: 'bar'}))
             .then(() => ce.cacheGet('foo').should.eventually.equal(null));

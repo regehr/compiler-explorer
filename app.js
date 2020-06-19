@@ -164,7 +164,8 @@ logger.info(`properties hierarchy: ${propHierarchy.join(', ')}`);
 if (opts.propDebug) props.setDebug(true);
 
 // *All* files in config dir are parsed
-props.initialize(defArgs.rootDir + '/config', propHierarchy);
+const configDir = path.join(defArgs.rootDir, 'config');
+props.initialize(configDir, propHierarchy);
 
 // Now load up our libraries.
 const aws = require('./lib/aws'),
@@ -397,8 +398,10 @@ async function main() {
 
     const ClientOptionsHandler = require('./lib/options-handler');
     const clientOptionsHandler = new ClientOptionsHandler(fileSources, compilerProps, defArgs);
+    const CompilationQueue = require('./lib/compilation-queue');
+    const compilationQueue = CompilationQueue.fromProps(compilerProps.ceProps);
     const CompilationEnvironment = require('./lib/compilation-env');
-    const compilationEnvironment = new CompilationEnvironment(compilerProps, defArgs.doCache);
+    const compilationEnvironment = new CompilationEnvironment(compilerProps, compilationQueue, defArgs.doCache);
     const CompileHandler = require('./lib/handlers/compile').Handler;
     const compileHandler = new CompileHandler(compilationEnvironment, awsProps);
     const StorageHandler = require('./lib/storage/storage');
@@ -407,6 +410,7 @@ async function main() {
     const sourceHandler = new SourceHandler(fileSources, staticHeaders);
     const CompilerFinder = require('./lib/compiler-finder');
     const compilerFinder = new CompilerFinder(compileHandler, compilerProps, awsProps, defArgs, clientOptionsHandler);
+    const sponsors = require('./lib/sponsors');
 
     logger.info("=======================================");
     if (gitReleaseName) logger.info(`  git release ${gitReleaseName}`);
@@ -481,7 +485,7 @@ async function main() {
             }
         }))
         // Handle healthchecks at the root, as they're not expected from the outside world
-        .use('/healthcheck', new healthCheck.HealthCheckHandler(healthCheckFilePath).handle)
+        .use('/healthcheck', new healthCheck.HealthCheckHandler(compilationQueue, healthCheckFilePath).handle)
         .use(httpRoot, router)
         .use((req, res, next) => {
             next({status: 404, message: `page "${req.path}" could not be found`});
@@ -501,12 +505,13 @@ async function main() {
             res.render('error', renderConfig({error: {code: status, message: message}}));
         });
 
+    const sponsorConfig = sponsors.loadFromString(fs.readFileSync(configDir + '/sponsors.yaml', 'utf-8'));
     function renderConfig(extra, urlOptions) {
-        const urlOptionsWhitelist = [
+        const urlOptionsAllowed = [
             'readOnly', 'hideEditorToolbars'
         ];
         const filteredUrlOptions = _.mapObject(
-            _.pick(urlOptions, urlOptionsWhitelist),
+            _.pick(urlOptions, urlOptionsAllowed),
             val => utils.toProperty(val));
         const allExtraOptions = _.extend({}, filteredUrlOptions, extra);
         const options = _.extend({}, allExtraOptions, clientOptionsHandler.get());
@@ -517,6 +522,7 @@ async function main() {
         options.staticRoot = staticRoot;
         options.storageSolution = storageSolution;
         options.require = pugRequireHandler;
+        options.sponsors = sponsorConfig;
         return options;
     }
 
@@ -629,6 +635,11 @@ async function main() {
             res.set('Content-Type', 'application/javascript');
             const options = JSON.stringify(clientOptionsHandler.get());
             res.end(`window.compilerExplorerOptions = ${options};`);
+        })
+        .use('/bits/:bits.html', (req, res) => {
+            staticHeaders(res);
+            contentPolicyHeader(res);
+            res.render('bits/' + req.params.bits, renderConfig({embedded: false}, req.query));
         })
         .use(bodyParser.json({limit: ceProps('bodyParserLimit', maxUploadSize)}))
         .use(bodyParser.text({limit: ceProps('bodyParserLimit', maxUploadSize), type: () => true}))

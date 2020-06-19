@@ -26,9 +26,9 @@ const chai = require('chai'),
     chaiAsPromised = require("chai-as-promised"),
     fs = require('fs-extra'),
     utils = require('../lib/utils'),
-    CompilationEnvironment = require('../lib/compilation-env'),
     GoCompiler = require('../lib/compilers/golang'),
-    properties = require('../lib/properties');
+    {makeCompilationEnvironment} = require('./utils.js');
+
 chai.use(chaiAsPromised);
 chai.should();
 
@@ -49,7 +49,7 @@ function testGoAsm(basefilename) {
     const asmLines = utils.splitLines(fs.readFileSync(basefilename + ".asm").toString());
 
     const result = {
-        stdout: asmLines.map((line) => {
+        stderr: asmLines.map((line) => {
             return {
                 text: line
             };
@@ -63,15 +63,15 @@ function testGoAsm(basefilename) {
 
         return output.should.deep.equal({
             asm: expectedOutput.join("\n"),
-            stdout: []
+            stdout: [],
+            stderr: null
         });
     });
 }
 
 describe('GO asm tests', () => {
     before(() => {
-        const compilerProps = new properties.CompilerProps(languages, properties.fakeProps({}));
-        ce = new CompilationEnvironment(compilerProps);
+        ce = makeCompilationEnvironment({languages});
     });
 
     it('Handles unknown line number correctly', () => {
