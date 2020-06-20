@@ -1,6 +1,6 @@
 #!/bin/bash
 
-cd /home/ce/ce2
+cd /home/ce/compiler-explorer
 
 while :
 do
