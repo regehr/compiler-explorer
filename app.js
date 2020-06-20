@@ -130,7 +130,7 @@ const defArgs = {
     rootDir: opts.rootDir || './etc',
     env: opts.env || ['dev'],
     hostname: opts.host,
-    port: opts.port || 8099,
+    port: opts.port || 8080,
     gitReleaseName: gitReleaseName,
     travisBuildNumber: travisBuildNumber,
     wantedLanguage: opts.language || null,
