@@ -199,7 +199,7 @@ const staticMaxAgeSecs = ceProps('staticMaxAgeSecs', 0);
 const maxUploadSize = ceProps('maxUploadSize', '1mb');
 const extraBodyClass = ceProps('extraBodyClass', isDevMode() ? 'dev' : '');
 const storageSolution = compilerProps.ceProps('storageSolution', 'local');
-const httpRoot = urljoin(ceProps('httpRoot', '/'), '/ce');
+const httpRoot = urljoin(ceProps('httpRoot', '/'), '/');
 
 const staticUrl = ceProps('staticUrl');
 const staticRoot = urljoin(staticUrl || urljoin(httpRoot, 'static'), '/');
