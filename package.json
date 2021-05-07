@@ -61,7 +61,7 @@
     "systemd-socket": "0.0.0",
     "temp": "^0.9.1",
     "tree-kill": "^1.2.2",
-    "underscore": "^1.10.2",
+    "underscore": "^1.12.1",
     "url-join": "^4.0.1",
     "vis": "4.20.1",
     "which": "^2.0.2",
