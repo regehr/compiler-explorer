@@ -1,14 +1,18 @@
 set -e
 
+CC=gcc-11
+CXX=g++-11
+
 (
 cd $HOME/z3
 git pull
 rm -rf build
 rm -rf $HOME/z3-install
-python scripts/mk_make.py
+mkdir build
 cd build
-make -j4
-sudo make install
+cmake .. -G Ninja
+ninja
+sudo ninja install
 )
 
 (
@@ -17,9 +21,8 @@ git pull || true
 rm -rf build
 mkdir build
 cd build
-cmake -G Ninja -DLLVM_ENABLE_RTTI=ON -DLLVM_ENABLE_EH=ON -DLLVM_BUILD_LLVM_DYLIB=ON -DCMAKE_BUILD_TYPE=Release  -DLLVM_ENABLE_ASSERTIONS=ON -DCMAKE_INSTALL_PREFIX=$HOME/llvm-install ../llvm -DLLVM_ENABLE_PROJECTS="llvm;lld;clang;compiler-rt;libcxx;libcxxabi"
+cmake -G Ninja -DLLVM_ENABLE_RTTI=ON -DLLVM_ENABLE_EH=ON -DLLVM_BUILD_LLVM_DYLIB=ON -DCMAKE_BUILD_TYPE=Release  -DLLVM_ENABLE_ASSERTIONS=ON -DCMAKE_INSTALL_PREFIX=$HOME/llvm-install ../llvm -DLLVM_ENABLE_PROJECTS="llvm;lld;clang;compiler-rt" -DLLVM_ENABLE_RUNTIMES="libcxx;libcxxabi" -DCMAKE_C_COMPILER=$CC -DCMAKE_CXX_COMPILER=$CXX
 ninja
-ninja check
 ninja install
 )
 
@@ -30,7 +33,7 @@ git pull
 rm -rf build-new
 mkdir build-new
 cd build-new
-cmake .. -G Ninja -DBUILD_TV=1 -DBUILD_LLVM_UTILS=1 -DLLVM_DIR=$HOME/llvm-install/lib/cmake/llvm -DCMAKE_BUILD_TYPE=Release
+cmake .. -G Ninja -DBUILD_TV=1 -DBUILD_LLVM_UTILS=1 -DLLVM_DIR=$HOME/llvm-install/lib/cmake/llvm -DCMAKE_BUILD_TYPE=Release  -DCMAKE_C_COMPILER=$CC -DCMAKE_CXX_COMPILER=$CXX
 ninja
 ninja check || true # some cases always fail
 )

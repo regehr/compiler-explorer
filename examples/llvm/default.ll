@@ -8,6 +8,12 @@ define i32 @tgt(i32) {
   ret i32 %r
 }
 
+; a good "getting started" exercise with alive2
+; would be to change the udiv (unsigned divide)
+; instruction in @src above into an sdiv (signed
+; divide) and then fix @tgt so that the optimization
+; is again correct
+
 ; alive-tv is a translation validation tool based
 ; on Alive2:
 ;   https://github.com/AliveToolkit/alive2
