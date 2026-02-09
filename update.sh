@@ -1,19 +1,19 @@
 set -e
 
-CC=gcc-11
-CXX=g++-11
+CC=gcc
+CXX=g++
 
-(
-cd $HOME/z3
-git pull
-rm -rf build
-rm -rf $HOME/z3-install
-mkdir build
-cd build
-cmake .. -G Ninja
-ninja
-sudo ninja install
-)
+#(
+#cd $HOME/z3
+#git pull
+#rm -rf build
+#rm -rf $HOME/z3-install
+#mkdir build
+#cd build
+#cmake .. -G Ninja
+#ninja
+#sudo ninja install
+#)
 
 (
 cd $HOME/llvm-project
@@ -21,7 +21,7 @@ git pull || true
 rm -rf build
 mkdir build
 cd build
-cmake -G Ninja -DLLVM_ENABLE_RTTI=ON -DLLVM_ENABLE_EH=ON -DLLVM_BUILD_LLVM_DYLIB=ON -DCMAKE_BUILD_TYPE=Release  -DLLVM_ENABLE_ASSERTIONS=ON -DCMAKE_INSTALL_PREFIX=$HOME/llvm-install ../llvm -DLLVM_ENABLE_PROJECTS="llvm;lld;clang;libunwind;compiler-rt" -DLLVM_ENABLE_RUNTIMES="libcxx;libcxxabi" -DCMAKE_C_COMPILER=$CC -DCMAKE_CXX_COMPILER=$CXX
+cmake -G Ninja -DLLVM_ENABLE_RTTI=ON -DLLVM_ENABLE_EH=ON -DLLVM_BUILD_LLVM_DYLIB=ON -DCMAKE_BUILD_TYPE=Release  -DLLVM_ENABLE_ASSERTIONS=ON -DCMAKE_INSTALL_PREFIX=$HOME/llvm-install ../llvm -DLLVM_ENABLE_PROJECTS="llvm;lld;clang;compiler-rt" -DLLVM_ENABLE_RUNTIMES="libcxx;libcxxabi;libunwind" -DCMAKE_C_COMPILER=$CC -DCMAKE_CXX_COMPILER=$CXX
 ninja
 ninja install
 )
