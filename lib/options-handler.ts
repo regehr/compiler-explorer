@@ -85,6 +85,7 @@ export type ClientOptionsType = {
     showSponsors: boolean;
     urlShortenService: string;
     defaultSource: string;
+    defaultLanguage: string;
     compilers: CompilerInfo[];
     libs: Record<string, Record<string, OptionsHandlerLibrary>>;
     remoteLibs: Record<any, any>;
@@ -192,6 +193,7 @@ export class ClientOptionsHandler implements ClientOptionsSource {
             showSponsors: ceProps('showSponsors', false),
             urlShortenService: ceProps('urlShortenService', 'default'),
             defaultSource: ceProps('defaultSource', ''),
+            defaultLanguage: ceProps('defaultLanguage', ''),
             compilers: [],
             libs: libs,
             remoteLibs: {},

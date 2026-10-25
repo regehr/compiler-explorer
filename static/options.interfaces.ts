@@ -55,6 +55,7 @@ export type Options = {
     gitReleaseCommit?: string;
     slides?: any[];
     cookieDomainRe: string;
+    defaultLanguage: string;
     motdUrl: string;
     pageloadUrl: string;
     mobileViewer: boolean;

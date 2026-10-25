@@ -24,6 +24,7 @@
 
 export {AburiCompiler} from './aburi.js';
 export {AdaCompiler} from './ada.js';
+export {AliveTvCompiler} from './alive-tv.js';
 export {AMDRGACompiler} from './amd-rga.js';
 export {AnalysisTool} from './analysis-tool.js';
 export {AssemblyCompiler} from './assembly.js';

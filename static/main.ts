@@ -512,6 +512,8 @@ function getDefaultLangId(subLangId: LanguageKey | undefined) {
         const defaultLangSetting = earlyGetDefaultLangSetting();
         if (defaultLangSetting && defaultLangSetting in languages) {
             defaultLangId = defaultLangSetting;
+        } else if (options.defaultLanguage in languages) {
+            defaultLangId = options.defaultLanguage as LanguageKey;
         } else if ('c++' in languages) {
             defaultLangId = 'c++';
         } else {
