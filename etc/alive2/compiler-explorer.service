@@ -1,0 +1,37 @@
+[Unit]
+Description=Compiler Explorer
+After=network.target
+
+[Service]
+Type=simple
+User=ce
+Group=ce
+WorkingDirectory=/home/regehr/compiler-explorer
+Environment=NODE_ENV=LOCAL
+Environment=PATH=/home/regehr/.nvm/versions/node/v26.12.1/bin:/usr/local/bin:/usr/bin:/bin
+# CE runs `git rev-parse HEAD` at startup, and git refuses a repo owned by another user
+Environment=GIT_CONFIG_COUNT=1
+Environment=GIT_CONFIG_KEY_0=safe.directory
+Environment=GIT_CONFIG_VALUE_0=/home/regehr/compiler-explorer
+ExecStart=/home/regehr/.nvm/versions/node/v26.12.1/bin/node --no-warnings=ExperimentalWarning --import=tsx app.ts --host 127.0.0.1 --env alive2
+Restart=on-failure
+RestartSec=5
+
+# Creates /var/lib/ce owned by ce; the only persistent place CE can write
+StateDirectory=ce
+
+# Caps for CE and every compile it spawns, combined
+MemoryMax=16G
+TasksMax=1024
+CPUQuota=1600%
+
+# CE sees a read-only system, a private /tmp, and only these dirs of /home
+NoNewPrivileges=yes
+PrivateTmp=yes
+ProtectSystem=strict
+TemporaryFileSystem=/home
+BindReadOnlyPaths=/home/regehr/compiler-explorer /home/regehr/.nvm
+ProtectKernelModules=yes
+
+[Install]
+WantedBy=multi-user.target

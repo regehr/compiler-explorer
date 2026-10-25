@@ -355,7 +355,8 @@ export class Settings {
 
         const langs = languagesService.getLanguagesOrFail();
         const defaultLanguageSelector = this.root.find('.defaultLanguage');
-        const defLang = this.settings.defaultLanguage || Object.keys(langs)[0] || 'c++';
+        const configuredLang = options.defaultLanguage in langs ? options.defaultLanguage : undefined;
+        const defLang = this.settings.defaultLanguage || configuredLang || Object.keys(langs)[0] || 'c++';
 
         const defaultLanguageData = Object.keys(langs).map(lang => {
             return {label: langs[lang].id, desc: langs[lang].name};
