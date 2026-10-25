@@ -22,9 +22,9 @@ RestartSec=5
 StateDirectory=ce
 
 # Caps for CE and every compile it spawns, combined
-MemoryMax=16G
-TasksMax=1024
-CPUQuota=1600%
+MemoryMax=48G
+TasksMax=4096
+CPUQuota=3000%
 # An OOM kill (most likely of the biggest compile) shouldn't make systemd stop the whole service
 OOMPolicy=continue
 

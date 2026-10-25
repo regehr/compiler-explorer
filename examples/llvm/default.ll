@@ -1,3 +1,8 @@
+; HINT: If you are running into timeouts, please
+; consider passing the --disable-undef-input flag
+; to alive-tv. Avoiding the need to reason about
+; undef tends to make Alive2 a lot faster.
+
 define i32 @src(i32 %x) {
   %r = udiv i32 %x, 8192
   ret i32 %r
