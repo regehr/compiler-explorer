@@ -7,13 +7,14 @@ Type=simple
 User=ce
 Group=ce
 WorkingDirectory=/home/regehr/compiler-explorer
-Environment=NODE_ENV=LOCAL
+Environment=NODE_ENV=production
 Environment=PATH=/home/regehr/.nvm/versions/node/v26.12.1/bin:/usr/local/bin:/usr/bin:/bin
 # CE runs `git rev-parse HEAD` at startup, and git refuses a repo owned by another user
 Environment=GIT_CONFIG_COUNT=1
 Environment=GIT_CONFIG_KEY_0=safe.directory
 Environment=GIT_CONFIG_VALUE_0=/home/regehr/compiler-explorer
-ExecStart=/home/regehr/.nvm/versions/node/v26.12.1/bin/node --no-warnings=ExperimentalWarning --import=tsx app.ts --host 127.0.0.1 --env alive2
+# Runs the prebuilt server and frontend (see etc/alive2/README.md); the service can't build either itself
+ExecStart=/home/regehr/.nvm/versions/node/v26.12.1/bin/node --no-warnings=ExperimentalWarning out/dist/app.js --static out/webpack/static --host 127.0.0.1 --env alive2
 Restart=on-failure
 RestartSec=5
 

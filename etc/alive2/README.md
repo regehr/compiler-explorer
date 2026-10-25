@@ -24,15 +24,18 @@ Avoid `etc/config/*.local.properties`: they are gitignored and override the `ali
    link it to `/usr/local/bin/dumb-init`, the path CE runs inside the jail.
 3. Create the unprivileged service user: `useradd --system --user-group --home-dir /var/lib/ce --shell /usr/sbin/nologin ce`.
    CE's only writable state (shortlinks and the compiler cache) is in `/var/lib/ce`, created by the unit's `StateDirectory`.
-4. As the repo owner: `npm ci && npm run webpack`. The service can't write to the checkout, so it can't build the frontend.
+4. As the repo owner: `npm ci && npm run webpack && npm run ts-compile`. The service runs in production mode, from
+   the prebuilt server in `out/dist` and frontend in `out/webpack/static`, and can't write to the checkout to build them.
 5. Install the unit and nginx site from `etc/alive2/`, then
    `systemctl daemon-reload && systemctl enable --now compiler-explorer` and `nginx -t && systemctl reload nginx`.
 
 ## Updating
 
 ```sh
-git pull && npm ci && npm run webpack
+git pull && npm ci && npm run webpack && npm run ts-compile
 sudo systemctl restart compiler-explorer
 ```
+
+Rebuild after any change to code; a change to `etc/config/*.alive2.properties` or `examples/` only needs the restart. Stale files from a previous build can linger in `out/`, so `rm -rf out` first if anything looks odd.
 
 If node is upgraded through nvm, update both node paths in the unit.
