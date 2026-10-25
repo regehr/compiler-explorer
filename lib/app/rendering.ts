@@ -56,6 +56,7 @@ const FRONTEND_INLINE_OPTION_KEYS = [
     'localStoragePrefix',
     'cvCompilerCountMax',
     'defaultFontScale',
+    'defaultLanguage',
     'doCache',
     'thirdPartyIntegrationEnabled',
     'statusTrackingEnabled',

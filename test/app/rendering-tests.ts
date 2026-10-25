@@ -129,6 +129,14 @@ describe('Rendering Module', () => {
             expect(result.sponsors).toBeDefined();
         });
 
+        it('should inline the default language into the options the page embeds', () => {
+            const {renderConfig} = createRenderHandlers(mockPugRequireHandler, mockOptions, mockDependencies);
+
+            const result = renderConfig({});
+
+            expect(JSON.parse(result.compilerExplorerOptions)).toHaveProperty('defaultLanguage', 'c++');
+        });
+
         it('should set extraBodyClass to "embedded" when embedded is true', () => {
             const {renderConfig} = createRenderHandlers(mockPugRequireHandler, mockOptions, mockDependencies);
 
