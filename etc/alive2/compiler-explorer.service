@@ -25,6 +25,8 @@ StateDirectory=ce
 MemoryMax=16G
 TasksMax=1024
 CPUQuota=1600%
+# An OOM kill (most likely of the biggest compile) shouldn't make systemd stop the whole service
+OOMPolicy=continue
 
 # CE sees a read-only system, a private /tmp, and only these dirs of /home
 NoNewPrivileges=yes
