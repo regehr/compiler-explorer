@@ -32,9 +32,31 @@ OOMPolicy=continue
 NoNewPrivileges=yes
 PrivateTmp=yes
 ProtectSystem=strict
-TemporaryFileSystem=/home
+ProtectHome=tmpfs
 BindReadOnlyPaths=/home/regehr/compiler-explorer /home/regehr/.nvm
 ProtectKernelModules=yes
+ProtectControlGroups=yes
+ProtectKernelTunables=yes
+ProtectKernelLogs=yes
+ProtectClock=yes
+ProtectProc=invisible
+ProcSubset=pid
+# Not PrivateDevices: its read-only /dev stops nsjail making the jail's /dev/null writable. Not ProtectHostname: it
+# blocks the sethostname nsjail needs.
+DevicePolicy=closed
+UMask=0077
+CapabilityBoundingSet=
+LockPersonality=yes
+RestrictRealtime=yes
+RestrictSUIDSGID=yes
+# AF_NETLINK: nsjail uses it to bring up loopback inside each jail's network namespace
+RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6 AF_NETLINK
+SystemCallArchitectures=native
+# A denylist rather than @system-service: nsjail needs @mount and parts of @privileged to build each jail
+SystemCallFilter=~@clock @cpu-emulation @debug @module @obsolete @raw-io @reboot @swap
+
+# The cloud metadata server hands out this VM's service-account token; CE never needs it
+IPAddressDeny=169.254.169.254
 
 [Install]
 WantedBy=multi-user.target
