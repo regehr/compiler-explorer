@@ -27,6 +27,7 @@ import type {CompilationResult} from '../../types/compilation/compilation.interf
 import type {ParseFiltersAndOutputOptions} from '../../types/features/filters.interfaces.js';
 import {AnalysisTool} from './analysis-tool.js';
 import {ClangParser} from './argument-parsers.js';
+import {type InterpreterStreams, IrInterpreter} from './ir-interpreter.js';
 
 // Each SMT query gets far longer than a whole compile is usually allowed, so a hard problem ends in CE's
 // timeout (where we can suggest how to simplify it) rather than in a terse per-query "timeout" from Alive2.
@@ -62,6 +63,10 @@ export class AliveTvCompiler extends AnalysisTool {
         return ClangParser;
     }
 
+    override getCompilerResultLanguageId(_filters?: ParseFiltersAndOutputOptions): string {
+        return 'llvm-ir';
+    }
+
     // alive-tv's report is prose interleaved with IR; the asm parser would treat lines like "#0:" as labels.
     override async processAsm(result: {asm: string}): Promise<ParsedAsmResult> {
         return {asm: result.asm.split('\n').map(text => ({text, source: null}))};
@@ -72,5 +77,35 @@ export class AliveTvCompiler extends AnalysisTool {
             result.asm = aliveTimeoutMessage.split('\n').map(text => ({text, source: null}));
         }
         return result;
+    }
+}
+
+export class AliveExecCompiler extends IrInterpreter {
+    static override get key() {
+        return 'alive-exec';
+    }
+
+    override readonly timeoutMessage = aliveTimeoutMessage;
+
+    // alive-exec writes its report to std::cout and ignores -o, so there is no output file to name.
+    override optionsForFilter(_filters: ParseFiltersAndOutputOptions, _outputFilename: string) {
+        return [defaultSmtTimeoutArg];
+    }
+
+    override splitStreams(stdout: string, stderr: string): InterpreterStreams {
+        // alive-exec models no output libcalls, so the program cannot write anything of its own, and stderr
+        // carries only the IR reader's diagnostics. Both belong in the report.
+        return {report: stdout + stderr, programOutput: ''};
+    }
+
+    override ranTheProgram(report: string): boolean {
+        // alive-exec names each basic block as it enters it, having first echoed the function.
+        return /^Executing /m.test(report);
+    }
+
+    override reportsItsOwnExit(report: string): boolean {
+        // Returned gives the full value, where the exit status keeps only its bottom eight bits, and the
+        // 255 that goes with ERROR (poison) or UB triggered is alive-exec's own rather than the program's.
+        return /^(?:Returned |ERROR: )|UB triggered!/m.test(report);
     }
 }
