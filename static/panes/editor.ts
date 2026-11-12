@@ -521,7 +521,9 @@ export class Editor extends MonacoPane<monaco.editor.IStandaloneCodeEditor, Edit
         super.initializeGlobalDependentProperties();
 
         this.httpRoot = window.httpRoot;
-        this.langKeys = Object.keys(languagesService.getLanguagesOrFail()) as LanguageKey[];
+        this.langKeys = (Object.keys(languagesService.getLanguagesOrFail()) as LanguageKey[]).filter(
+            id => !isManifestLanguageId(id),
+        );
     }
 
     override initializeStateDependentProperties(state: MonacoPaneState & EditorState): void {
@@ -576,7 +578,9 @@ export class Editor extends MonacoPane<monaco.editor.IStandaloneCodeEditor, Edit
             labelField: 'name',
             searchField: ['name'],
             placeholder: '🔍 Select a language...',
-            options: [...Object.values(languagesService.getLanguagesOrFail())],
+            options: Object.values(languagesService.getLanguagesOrFail()).filter(
+                lang => !isManifestLanguageId(lang.id),
+            ),
             items: this.currentLanguage?.id ? [this.currentLanguage.id] : [],
             dropdownParent: 'body',
             plugins: ['dropdown_input'],
