@@ -22,13 +22,21 @@
 // ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE
 // POSSIBILITY OF SUCH DAMAGE.
 
-import {beforeAll, describe, expect, it} from 'vitest';
+import fs from 'node:fs/promises';
+import path from 'node:path';
+
+import {afterEach, beforeAll, describe, expect, it, vi} from 'vitest';
 
 import {CompilationEnvironment} from '../lib/compilation-env.js';
-import {aliveTimeoutMessage} from '../lib/compilers/alive-tv.js';
-import {AliveExecCompiler, AliveTvCompiler} from '../lib/compilers/index.js';
-import type {CompilationResult} from '../types/compilation/compilation.interfaces.js';
-import {makeCompilationEnvironment, makeFakeCompilerInfo, makeFakeParseFiltersAndOutputOptions} from './utils.js';
+import {aliveTimeoutMessage, backendTvTimeoutMessage} from '../lib/compilers/alive-tv.js';
+import {AliveExecCompiler, AliveTvCompiler, BackendTvCompiler} from '../lib/compilers/index.js';
+import type {CompilationResult, ExecutionOptionsWithEnv} from '../types/compilation/compilation.interfaces.js';
+import {
+    makeCompilationEnvironment,
+    makeFakeCompilerInfo,
+    makeFakeParseFiltersAndOutputOptions,
+    newTempDir,
+} from './utils.js';
 
 const languages = {
     llvm: {id: 'llvm'},
@@ -104,6 +112,76 @@ describe('alive-tv compiler', () => {
             asm: '<Compilation failed>',
         } as CompilationResult);
         expect(result.asm).toBe('<Compilation failed>');
+    });
+});
+
+describe('backend-tv compiler', () => {
+    let compiler: BackendTvCompiler;
+
+    beforeAll(() => {
+        const info = makeFakeCompilerInfo({exe: '/opt/alive2/backend-tv', lang: languages.llvm.id});
+        compiler = new BackendTvCompiler(info, makeCompilationEnvironment({languages}));
+    });
+
+    afterEach(() => vi.restoreAllMocks());
+
+    async function runWith(code: number, report: string) {
+        const dir = newTempDir();
+        await fs.writeFile(compiler.getOutputFilename(dir, compiler.outputFilebase), report);
+        vi.spyOn(compiler, 'exec').mockResolvedValue({
+            code,
+            okToCache: true,
+            filenameTransform: filename => filename,
+            stdout: '',
+            stderr: '',
+            execTime: 0,
+            timedOut: false,
+            truncated: false,
+        });
+        return compiler.runCompiler('backend-tv', [], path.join(dir, 'example.ll'), {} as ExecutionOptionsWithEnv);
+    }
+
+    // ---- Arguments ----
+
+    it('should ask for the terse report ahead of the options it shares with alive-tv', () => {
+        const filters = makeFakeParseFiltersAndOutputOptions({intel: true});
+        expect(compiler.optionsForFilter(filters, 'output.txt')).toEqual([
+            '--terse',
+            '--smt-to=50000',
+            '-o',
+            'output.txt',
+        ]);
+    });
+
+    it('should let a user bring the lifter trace back', () => {
+        const filters = makeFakeParseFiltersAndOutputOptions({intel: true});
+        const args = compiler.prepareArguments(['--terse=false'], filters, {}, 'example.ll', 'output.txt', [], []);
+        expect(args).toEqual(['--terse', '--smt-to=50000', '-o', 'output.txt', '--terse=false', 'example.ll']);
+    });
+
+    // ---- Output ----
+
+    it('should show why the lifter gave up, although CE discards the report of a failed run', async () => {
+        const result = await runWith(255, "ERROR: we don't support structures in return values yet\n");
+        expect(result.code).toBe(255);
+        expect(result.stderr.map(line => line.text)).toEqual([
+            "ERROR: we don't support structures in return values yet",
+        ]);
+    });
+
+    it('should not repeat the report as compiler output when it reaches the main pane', async () => {
+        const result = await runWith(0, 'Transformation seems to be correct!\n');
+        expect(result.stderr).toEqual([]);
+    });
+
+    it('should not suggest --disable-undef-input on a timeout, since backend-tv already assumes it', () => {
+        const result = compiler.postCompilationPreCacheHook({
+            code: -1,
+            timedOut: true,
+            asm: '<Compilation failed>',
+        } as CompilationResult);
+        expect((result.asm as {text: string}[]).map(line => line.text)).toEqual(backendTvTimeoutMessage.split('\n'));
+        expect(backendTvTimeoutMessage).not.toContain('--disable-undef-input');
     });
 });
 

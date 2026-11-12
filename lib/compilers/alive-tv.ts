@@ -22,9 +22,13 @@
 // ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE
 // POSSIBILITY OF SUCH DAMAGE.
 
+import fs from 'node:fs/promises';
+import path from 'node:path';
+
 import type {ParsedAsmResult} from '../../types/asmresult/asmresult.interfaces.js';
-import type {CompilationResult} from '../../types/compilation/compilation.interfaces.js';
+import type {CompilationResult, ExecutionOptionsWithEnv} from '../../types/compilation/compilation.interfaces.js';
 import type {ParseFiltersAndOutputOptions} from '../../types/features/filters.interfaces.js';
+import * as utils from '../utils.js';
 import {AnalysisTool} from './analysis-tool.js';
 import {ClangParser} from './argument-parsers.js';
 import {type InterpreterStreams, IrInterpreter} from './ir-interpreter.js';
@@ -34,12 +38,15 @@ import {type InterpreterStreams, IrInterpreter} from './ir-interpreter.js';
 // It comes before the user's options, and alive-tv takes the last occurrence, so users can still override it.
 const defaultSmtTimeoutArg = '--smt-to=50000';
 
-export const aliveTimeoutMessage = `Alive2 timed out while processing your query.
+// backend-tv already assumes that its inputs are not undef, so it gets no advice to say so.
+export const backendTvTimeoutMessage = `Alive2 timed out while processing your query.
 There are a few things you can try:
 
 - remove extraneous instructions, if any
 
-- reduce variable widths, for example to i16, i8, or i4
+- reduce variable widths, for example to i16, i8, or i4`;
+
+export const aliveTimeoutMessage = `${backendTvTimeoutMessage}
 
 - add the --disable-undef-input command line flag, which
   allows Alive2 to assume that arguments to your IR are not
@@ -50,6 +57,8 @@ export class AliveTvCompiler extends AnalysisTool {
     static override get key() {
         return 'alive-tv';
     }
+
+    readonly timeoutMessage: string = aliveTimeoutMessage;
 
     override supportsObjdump() {
         return false;
@@ -74,7 +83,38 @@ export class AliveTvCompiler extends AnalysisTool {
 
     override postCompilationPreCacheHook(result: CompilationResult): CompilationResult {
         if (result.timedOut) {
-            result.asm = aliveTimeoutMessage.split('\n').map(text => ({text, source: null}));
+            result.asm = this.timeoutMessage.split('\n').map(text => ({text, source: null}));
+        }
+        return result;
+    }
+}
+
+export class BackendTvCompiler extends AliveTvCompiler {
+    static override get key() {
+        return 'backend-tv';
+    }
+
+    override readonly timeoutMessage = backendTvTimeoutMessage;
+
+    // Without --terse, the lifter's own trace runs to hundreds of lines for even a one-instruction function.
+    override optionsForFilter(filters: ParseFiltersAndOutputOptions, outputFilename: string) {
+        return ['--terse', ...super.optionsForFilter(filters, outputFilename)];
+    }
+
+    override async runCompiler(
+        compiler: string,
+        options: string[],
+        inputFilename: string,
+        execOptions: ExecutionOptionsWithEnv,
+        filters?: ParseFiltersAndOutputOptions,
+    ): Promise<CompilationResult> {
+        const result = await super.runCompiler(compiler, options, inputFilename, execOptions, filters);
+        if (result.code !== 0) {
+            // When the lifter gives up, it says why in its report and exits non-zero. CE empties the main pane
+            // whenever the status is non-zero, so the report has to travel as compiler output to be seen at all.
+            const outputFilename = this.getOutputFilename(path.dirname(inputFilename), this.outputFilebase);
+            const report = await fs.readFile(outputFilename, 'utf8').catch(() => '');
+            result.stderr.push(...utils.parseOutput(report, inputFilename));
         }
         return result;
     }

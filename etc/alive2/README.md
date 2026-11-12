@@ -1,7 +1,7 @@
 # Alive2 Compiler Explorer instance
 
-This fork runs Compiler Explorer as a public front end for `alive-tv`, `alive-exec` and `llubi`, with LLVM IR as the
-default language and C/C++ via clang trunk. Execution is off, and every compiler invocation runs inside nsjail.
+This fork runs Compiler Explorer as a public front end for `alive-tv`, `backend-tv`, `alive-exec` and `llubi`, with LLVM
+IR as the default language and C/C++ via clang trunk. Execution is off, and every compiler invocation runs inside nsjail.
 
 ## Where the configuration lives
 
@@ -19,9 +19,10 @@ Avoid `etc/config/*.local.properties`: they are gitignored and override the `ali
 
 ## Host setup (Debian 12)
 
-1. Install LLVM to `/opt/compiler-explorer/latest-llvm` and Alive2 to `/opt/compiler-explorer/alive2`, built against
-   that LLVM. Keep `/opt/compiler-explorer` owned by root: the jail only sees system directories and
-   `/opt/compiler-explorer`, and CE must not be able to modify the compilers it runs.
+1. Install LLVM to `/opt/compiler-explorer/latest-llvm`, Alive2 to `/opt/compiler-explorer/alive2`, and Alive2's
+   `arm-tv` branch, which has `backend-tv`, to `/opt/compiler-explorer/alive2-arm-tv`, both built against that LLVM.
+   Keep `/opt/compiler-explorer` owned by root: the jail only sees system directories and `/opt/compiler-explorer`,
+   and CE must not be able to modify the compilers it runs.
 2. Build [nsjail](https://github.com/google/nsjail) and install it as `/usr/local/bin/nsjail`. Install `dumb-init` and
    link it to `/usr/local/bin/dumb-init`, the path CE runs inside the jail.
 3. Create the unprivileged service user: `useradd --system --user-group --home-dir /var/lib/ce --shell /usr/sbin/nologin ce`.
