@@ -26,7 +26,7 @@ import {beforeAll, describe, expect, it} from 'vitest';
 
 import {CompilationEnvironment} from '../lib/compilation-env.js';
 import {aliveTimeoutMessage} from '../lib/compilers/alive-tv.js';
-import {AliveTvCompiler} from '../lib/compilers/index.js';
+import {AliveExecCompiler, AliveTvCompiler} from '../lib/compilers/index.js';
 import type {CompilationResult} from '../types/compilation/compilation.interfaces.js';
 import {makeCompilationEnvironment, makeFakeCompilerInfo, makeFakeParseFiltersAndOutputOptions} from './utils.js';
 
@@ -104,5 +104,72 @@ describe('alive-tv compiler', () => {
             asm: '<Compilation failed>',
         } as CompilationResult);
         expect(result.asm).toBe('<Compilation failed>');
+    });
+});
+
+describe('alive-exec compiler', () => {
+    let compiler: AliveExecCompiler;
+
+    beforeAll(() => {
+        const info = makeFakeCompilerInfo({exe: '/opt/alive2/alive-exec', lang: languages.llvm.id});
+        compiler = new AliveExecCompiler(info, makeCompilationEnvironment({languages}));
+    });
+
+    // ---- Arguments ----
+
+    it('should ask only for an SMT timeout, since -o is ignored', () => {
+        const filters = makeFakeParseFiltersAndOutputOptions({intel: true});
+        expect(compiler.optionsForFilter(filters, 'output.txt')).toEqual(['--smt-to=50000']);
+    });
+
+    // ---- Streams ----
+
+    it('should report both streams, since the interpreted program writes nothing of its own', () => {
+        expect(compiler.splitStreams('Executing %entry\n', "could not read bitcode from 'x.ll'\n")).toEqual({
+            report: "Executing %entry\ncould not read bitcode from 'x.ll'\n",
+            programOutput: '',
+        });
+    });
+
+    // ---- Exit status ----
+
+    it('should treat the interpreted program return value as success, not failure', () => {
+        const report = 'Executing %#0\nReturned #x0000002a / non-poison=true\n';
+        expect(compiler.summariseExit(report, 42, false)).toEqual({report, code: 0});
+    });
+
+    it('should report poison as a finding of the run rather than a failure of the tool', () => {
+        const report = 'Executing %#0\nReturned #x80000000 / non-poison=false\nERROR: program returned poison\n';
+        expect(compiler.summariseExit(report, 255, false)).toEqual({report, code: 0});
+    });
+
+    it('should report triggered UB without claiming the program itself exited 255', () => {
+        const report = 'Executing %#0\n%a = UB triggered!\n';
+        expect(compiler.summariseExit(report, 255, false)).toEqual({report, code: 0});
+    });
+
+    it('should keep a failure to read the IR as a failure, since the run never started', () => {
+        const report = "bad.ll:2:11: error: expected value token\nCould not read bitcode from 'bad.ll'\n";
+        expect(compiler.summariseExit(report, 255, false)).toEqual({report, code: 255});
+    });
+
+    it('should note the exit status when the report never said how the program ended', () => {
+        expect(compiler.summariseExit('Executing %#0\n', 7, false)).toEqual({
+            report: 'Executing %#0\nProgram exited with status 7\n',
+            code: 0,
+        });
+    });
+
+    it('should leave a timeout alone', () => {
+        expect(compiler.summariseExit('Executing %#0\n', -1, true)).toEqual({report: 'Executing %#0\n', code: -1});
+    });
+
+    it('should replace the output with advice when alive-exec times out', () => {
+        const result = compiler.postCompilationPreCacheHook({
+            code: -1,
+            timedOut: true,
+            asm: '<Compilation failed>',
+        } as CompilationResult);
+        expect((result.asm as {text: string}[]).map(line => line.text)).toEqual(aliveTimeoutMessage.split('\n'));
     });
 });

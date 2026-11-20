@@ -24,7 +24,7 @@
 
 export {AburiCompiler} from './aburi.js';
 export {AdaCompiler} from './ada.js';
-export {AliveTvCompiler} from './alive-tv.js';
+export {AliveExecCompiler, AliveTvCompiler} from './alive-tv.js';
 export {AMDRGACompiler} from './amd-rga.js';
 export {AnalysisTool} from './analysis-tool.js';
 export {AssemblyCompiler} from './assembly.js';
@@ -113,6 +113,7 @@ export {LDCCompiler} from './ldc.js';
 export {LeanCompiler} from './lean.js';
 export {LFortranCompiler} from './lfortran.js';
 export {LLCCompiler} from './llc.js';
+export {LlubiCompiler} from './llubi.js';
 export {LLVMmcaTool} from './llvm-mca.js';
 export {LLVMMOSCompiler} from './llvm-mos.js';
 export {LuaCompiler} from './lua.js';

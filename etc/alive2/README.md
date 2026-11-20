@@ -1,7 +1,7 @@
 # Alive2 Compiler Explorer instance
 
-This fork runs Compiler Explorer as a public front end for `alive-tv`, with LLVM IR as the default language and C/C++
-via clang trunk. Execution is off, and every compiler invocation runs inside nsjail.
+This fork runs Compiler Explorer as a public front end for `alive-tv`, `alive-exec` and `llubi`, with LLVM IR as the
+default language and C/C++ via clang trunk. Execution is off, and every compiler invocation runs inside nsjail.
 
 ## Where the configuration lives
 
@@ -11,7 +11,9 @@ via clang trunk. Execution is off, and every compiler invocation runs inside nsj
 | Compilation sandbox      | `etc/nsjail/alive2-compile.cfg`          | read in place                                 |
 | systemd unit             | `etc/alive2/compiler-explorer.service`   | `/etc/systemd/system/compiler-explorer.service` |
 | nginx site               | `etc/alive2/nginx-site.conf`             | `/etc/nginx/sites-available/compiler-explorer` |
-| `alive-tv` compiler type | `lib/compilers/alive-tv.ts`              |                                               |
+| Alive2 compiler types    | `lib/compilers/alive-tv.ts`              |                                               |
+| IR interpreter base      | `lib/compilers/ir-interpreter.ts`        |                                               |
+| `llubi` compiler type    | `lib/compilers/llubi.ts`                 |                                               |
 
 Avoid `etc/config/*.local.properties`: they are gitignored and override the `alive2` files.
 
