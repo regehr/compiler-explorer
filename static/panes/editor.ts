@@ -611,7 +611,9 @@ export class Editor extends MonacoPane<monaco.editor.IStandaloneCodeEditor, Edit
             labelField: 'name',
             searchField: ['name'],
             placeholder: '🔍 Select a language...',
-            options: [...Object.values(languagesService.getLanguagesOrFail())],
+            options: Object.values(languagesService.getLanguagesOrFail()).filter(
+                lang => !isManifestLanguageId(lang.id) || lang.id === this.currentLanguage?.id,
+            ),
             items: this.currentLanguage?.id ? [this.currentLanguage.id] : [],
             dropdownParent: 'body',
             plugins: ['dropdown_input'],
