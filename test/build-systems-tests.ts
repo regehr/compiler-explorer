@@ -27,7 +27,7 @@ import fs from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
 
-import {describe, expect, it, vi} from 'vitest';
+import {afterEach, describe, expect, it, vi} from 'vitest';
 
 import {BaseCompiler} from '../lib/base-compiler.js';
 import {CargoBuildSystem} from '../lib/build-systems/cargo.js';
@@ -44,6 +44,8 @@ import {MakeBuildSystem} from '../lib/build-systems/make.js';
 import {MavenBuildSystem} from '../lib/build-systems/maven.js';
 import {CompilationEnvironment} from '../lib/compilation-env.js';
 import {RustCompiler} from '../lib/compilers/rust.js';
+import {Win32MingWClang} from '../lib/compilers/win32-mingw-clang.js';
+import {Win32MingWGcc} from '../lib/compilers/win32-mingw-gcc.js';
 import {Win32VcCompiler} from '../lib/compilers/win32-vc.js';
 import {ParsedRequest} from '../lib/handlers/compile.js';
 import {
@@ -483,7 +485,6 @@ describe('Cargo build system', () => {
         const compiler = makeRustCompiler(env, {libPath: ['/opt/rust/lib']});
         const request = makeParsedRequest();
         const cacheKey = compiler.getBuildProjectCacheKey(cargoBuildSystem, request, []);
-        vi.spyOn(compiler, 'newTempDir').mockResolvedValue('/tmp/ce-cargo-execution');
 
         const build = await (compiler as any).prepareProjectBuild(
             cargoBuildSystem,
@@ -493,6 +494,7 @@ describe('Cargo build system', () => {
             undefined,
             cacheKey,
             'unused-package-hash',
+            '/tmp/ce-cargo-execution',
         );
 
         expect(build.executeOptions.ldPath).toContain('/opt/rust/lib');
@@ -1184,6 +1186,35 @@ describe('Make build system', () => {
         expect(fsSync.existsSync(dirPath)).toBe(false);
     });
 
+    it('lets the compiler prepare a successful build for running before it is packaged', async () => {
+        const env = makeMakeEnv();
+        const compiler = makeCppCompiler(env);
+        const prepare = vi.spyOn(compiler, 'prepareArtifactExecution');
+        const store = vi.spyOn(compiler as any, 'storePackageWithExecutable').mockResolvedValue(undefined);
+
+        class Builds extends MakeBuildSystem {
+            override async getBuildPlan(): Promise<BuildPlan> {
+                return {getCompilationOptions: () => [], steps: []};
+            }
+
+            override async finaliseArtifact(): Promise<string | undefined> {
+                return undefined;
+            }
+        }
+
+        await compiler.buildProject(
+            new Builds(),
+            [],
+            makeParsedRequest({skipAsm: true, customOutputFilename: 'demo'}),
+            BypassCache.Compilation,
+        );
+
+        expect(prepare).toHaveBeenCalledTimes(1);
+        expect(path.basename(prepare.mock.calls[0][0])).toEqual('demo');
+        expect(prepare.mock.invocationCallOrder[0]).toBeLessThan(store.mock.invocationCallOrder[0]);
+        vi.restoreAllMocks();
+    });
+
     it('reports a missing launcher, which is thrown while working out what to run', async () => {
         // maven defaults to empty and asserts, so this has to arrive as a compilation result rather than a bare 400.
         const env = makeMakeEnv();
@@ -1222,6 +1253,41 @@ describe('Make build system', () => {
             const ctx = makeMakeContext(compiler, env, makeParsedRequest({customOutputFilename: outside}));
             expect(() => makeBuildSystem.getArtifactFilename(ctx)).toThrow(Error);
         }
+    });
+});
+
+describe('Project build cache key', () => {
+    afterEach(() => vi.restoreAllMocks());
+
+    class StopsAfterKeying extends MakeBuildSystem {
+        override async writeProjectFiles(): Promise<{inputFilename: string}> {
+            throw new Error('far enough');
+        }
+    }
+
+    async function executableHash(supportsDarkBackgroundColours: boolean, backendOptions: Record<string, any>) {
+        const env = makeCompilationEnvironment({languages, props: {make: '/usr/bin/make'}});
+        const compiler = makeCompiler(env, {supportsDarkBackgroundColours});
+        const getExecutableHash = vi.spyOn(env, 'getExecutableHash');
+
+        await compiler.buildProject(
+            new StopsAfterKeying(),
+            [],
+            makeParsedRequest(backendOptions),
+            BypassCache.Compilation,
+        );
+        return getExecutableHash.mock.results[0].value;
+    }
+
+    it('shares one entry between light and dark themes for a compiler that ignores the background', async () => {
+        const unspecified = await executableHash(false, {});
+        expect(await executableHash(false, {darkBackgroundColours: true})).toEqual(unspecified);
+    });
+
+    it('keeps an entry per background for a compiler that colours for it, defaulting to light', async () => {
+        const unspecified = await executableHash(true, {});
+        expect(await executableHash(true, {darkBackgroundColours: false})).toEqual(unspecified);
+        expect(await executableHash(true, {darkBackgroundColours: true})).not.toEqual(unspecified);
     });
 });
 
@@ -1303,12 +1369,14 @@ describe('Project build disassembly', () => {
                 await fs.mkdir(ctx.buildPath);
                 await fs.writeFile(artifactFilename, 'MZ');
 
+                const prepare = vi.spyOn(compiler, 'prepareArtifactDisassembly');
                 const result = await cmakeBuildSystem.postProcessArtifact(
                     ctx,
                     {code: 0, timedOut: false, stdout: [], stderr: []},
                     artifactFilename,
                 );
 
+                expect(prepare).toHaveBeenCalledWith(artifactFilename, parsedRequest.filters);
                 expect(result.asm).toEqual('<No objdumper configured>');
                 expect(result.objdumpInputFilename).toBeUndefined();
             } finally {
@@ -1316,5 +1384,27 @@ describe('Project build disassembly', () => {
                 await fs.rm(dirPath, {recursive: true, force: true});
             }
         });
+    }
+
+    // CMake names an executable on Windows <target>.exe, so that is what there is to disassemble and run
+    for (const Compiler of [Win32MingWGcc, Win32MingWClang]) {
+        for (const [customOutputFilename, artifact] of [
+            ['the_executable', 'the_executable.exe'],
+            ['tool.exe', 'tool.exe.exe'],
+        ]) {
+            it(`expects ${Compiler.key} to have built ${artifact}`, () => {
+                const env = makeEnv();
+                const compiler = new Compiler(
+                    makeFakeCompilerInfo({exe: 'g++.exe', lang: 'c++', ldPath: [], libPath: [], supportsBinary: true}),
+                    env,
+                );
+                const parsedRequest = makeParsedRequest({customOutputFilename});
+                const ctx = {
+                    ...makeContext(compiler, env, parsedRequest),
+                    buildPath: path.join('/tmp/project', 'build'),
+                };
+                expect(path.basename(cmakeBuildSystem.getArtifactFilename(ctx))).toEqual(artifact);
+            });
+        }
     }
 });

@@ -58,6 +58,7 @@ import {options} from '../options.js';
 import {languagesService} from '../services/languages.service.js';
 import {toolsService} from '../services/tools.service.js';
 import {SiteSettings} from '../settings.js';
+import type {Theme} from '../themes.js';
 import * as utils from '../utils.js';
 import {Alert} from '../widgets/alert.js';
 import {CompilationOptions} from '../widgets/compilation-options.js';
@@ -177,7 +178,7 @@ export class Compiler extends MonacoPane<monaco.editor.IStandaloneCodeEditor, Co
     private linkedFadeTimeoutId: NodeJS.Timeout | null;
     private toolsMenu: JQuery<HTMLElement> | null;
     private revealJumpStack: (monaco.editor.ICodeEditorViewState | null)[];
-    private compilerPicker: CompilerPicker;
+    private compilerPicker: CompilerPicker | undefined;
     private compiler: CompilerInfo | null;
     private recentInstructionSet: InstructionSet | null;
     private currentLangId: string | null;
@@ -200,6 +201,8 @@ export class Compiler extends MonacoPane<monaco.editor.IStandaloneCodeEditor, Co
     private haskellCoreButton: JQuery<HTMLButtonElement>;
     private haskellStgButton: JQuery<HTMLButtonElement>;
     private haskellCmmButton: JQuery<HTMLButtonElement>;
+    private jvmBytecodeButton: JQuery<HTMLButtonElement>;
+    private jvmBytecodeViewOpen = false;
     private leanCButton: JQuery<HTMLButtonElement>;
     private clojureMacroExpButton: JQuery<HTMLButtonElement>;
     private yulButton: JQuery<HTMLButtonElement>;
@@ -258,6 +261,7 @@ export class Compiler extends MonacoPane<monaco.editor.IStandaloneCodeEditor, Co
     private cfgViewOpenCount: number;
     private irCfgViewOpenCount: number;
     private wantOptInfo?: boolean;
+    private darkBackgroundColours = false;
     private ppViewOpen: boolean;
     private astViewOpen: boolean;
     private irViewOpen: boolean;
@@ -346,6 +350,7 @@ export class Compiler extends MonacoPane<monaco.editor.IStandaloneCodeEditor, Co
         this.initCallbacks();
         // Handle initial settings
         this.onSettingsChange(this.settings);
+        this.eventHub.emit('requestTheme');
         new CompilationOptions(this, this.id, result => result.result ?? result, this.filters);
 
         this.postInit(state);
@@ -468,7 +473,7 @@ export class Compiler extends MonacoPane<monaco.editor.IStandaloneCodeEditor, Co
         this.eventHub.unsubscribe();
         this.eventHub.emit('compilerClose', this.id, this.sourceTreeId ?? 0);
         this.editor.dispose();
-        this.compilerPicker.destroy();
+        this.compilerPicker?.destroy();
     }
 
     onCompiler(compilerId: number, compiler: unknown, options: string, editorId: number, treeId: number): void {}
@@ -480,10 +485,7 @@ export class Compiler extends MonacoPane<monaco.editor.IStandaloneCodeEditor, Co
 
         this.container.layoutManager.createDragSource(this.outputBtn, outputConfig);
         this.outputBtn.on('click', () => {
-            const insertPoint =
-                this.hub.findParentRowOrColumn(this.container.parent) ||
-                this.container.layoutManager.root.contentItems[0];
-            insertPoint.addChild(outputConfig);
+            this.hub.addToParentRowOrColumn(this.container, outputConfig);
         });
 
         const DEFAULT_EDITOR_ID = 1;
@@ -492,12 +494,21 @@ export class Compiler extends MonacoPane<monaco.editor.IStandaloneCodeEditor, Co
             const currentState = this.getCurrentState();
 
             // Extract only the fields we need, with proper defaults
-            const {source = DEFAULT_EDITOR_ID, filters, options = '', compiler, libs, lang, overrides} = currentState;
+            const {
+                source = DEFAULT_EDITOR_ID,
+                filters,
+                options = '',
+                compiler,
+                libs,
+                lang,
+                overrides,
+                tree,
+            } = currentState;
 
             return {
                 type: 'component',
                 componentName: COMPILER_COMPONENT_NAME,
-                componentState: {source, filters, options, compiler, libs, lang, overrides},
+                componentState: {source, filters, options, compiler, libs, lang, overrides, tree},
             };
         };
         const createOptView = () => {
@@ -675,6 +686,17 @@ export class Compiler extends MonacoPane<monaco.editor.IStandaloneCodeEditor, Co
             );
         };
 
+        const createJvmBytecodeView = () => {
+            return Components.getJvmBytecodeViewWith(
+                this.id,
+                this.source,
+                this.lastResult?.jvmBytecodeOutput,
+                this.getCompilerName(),
+                this.sourceEditorId ?? 0,
+                this.sourceTreeId ?? 0,
+            );
+        };
+
         const createClojureMacroExpView = () => {
             return Components.getClojureMacroExpViewWith(
                 this.id,
@@ -779,10 +801,7 @@ export class Compiler extends MonacoPane<monaco.editor.IStandaloneCodeEditor, Co
         ).on('dragStart', hidePaneAdder);
 
         this.domRoot.find('.btn.add-compiler').on('click', () => {
-            const insertPoint =
-                this.hub.findParentRowOrColumn(this.container.parent) ||
-                this.container.layoutManager.root.contentItems[0];
-            insertPoint.addChild(cloneComponent());
+            this.hub.addToParentRowOrColumn(this.container, cloneComponent());
         });
 
         createDragSource(this.container.layoutManager, this.optButton, () => createOptView()).on(
@@ -791,10 +810,7 @@ export class Compiler extends MonacoPane<monaco.editor.IStandaloneCodeEditor, Co
         );
 
         this.optButton.on('click', () => {
-            const insertPoint =
-                this.hub.findParentRowOrColumn(this.container.parent) ||
-                this.container.layoutManager.root.contentItems[0];
-            insertPoint.addChild(createOptView());
+            this.hub.addToParentRowOrColumn(this.container, createOptView());
         });
 
         createDragSource(this.container.layoutManager, this.stackUsageButton, () => createStackUsageView()).on(
@@ -803,10 +819,7 @@ export class Compiler extends MonacoPane<monaco.editor.IStandaloneCodeEditor, Co
         );
 
         this.stackUsageButton.on('click', () => {
-            const insertPoint =
-                this.hub.findParentRowOrColumn(this.container.parent) ||
-                this.container.layoutManager.root.contentItems[0];
-            insertPoint.addChild(createStackUsageView());
+            this.hub.addToParentRowOrColumn(this.container, createStackUsageView());
         });
 
         if (this.flagsButton) {
@@ -817,10 +830,7 @@ export class Compiler extends MonacoPane<monaco.editor.IStandaloneCodeEditor, Co
             );
 
             this.flagsButton.on('click', () => {
-                const insertPoint =
-                    this.hub.findParentRowOrColumn(this.container.parent) ||
-                    this.container.layoutManager.root.contentItems[0];
-                insertPoint.addChild(createFlagsView());
+                this.hub.addToParentRowOrColumn(this.container, createFlagsView());
             });
 
             popularArgumentsMenu.append(this.flagsButton);
@@ -832,10 +842,7 @@ export class Compiler extends MonacoPane<monaco.editor.IStandaloneCodeEditor, Co
         );
 
         this.ppButton.on('click', () => {
-            const insertPoint =
-                this.hub.findParentRowOrColumn(this.container.parent) ||
-                this.container.layoutManager.root.contentItems[0];
-            insertPoint.addChild(createPpView());
+            this.hub.addToParentRowOrColumn(this.container, createPpView());
         });
 
         createDragSource(this.container.layoutManager, this.astButton, () => createAstView()).on(
@@ -844,10 +851,7 @@ export class Compiler extends MonacoPane<monaco.editor.IStandaloneCodeEditor, Co
         );
 
         this.astButton.on('click', () => {
-            const insertPoint =
-                this.hub.findParentRowOrColumn(this.container.parent) ||
-                this.container.layoutManager.root.contentItems[0];
-            insertPoint.addChild(createAstView());
+            this.hub.addToParentRowOrColumn(this.container, createAstView());
         });
 
         createDragSource(this.container.layoutManager, this.irButton, () => createIrView()).on(
@@ -856,10 +860,7 @@ export class Compiler extends MonacoPane<monaco.editor.IStandaloneCodeEditor, Co
         );
 
         this.irButton.on('click', () => {
-            const insertPoint =
-                this.hub.findParentRowOrColumn(this.container.parent) ||
-                this.container.layoutManager.root.contentItems[0];
-            insertPoint.addChild(createIrView());
+            this.hub.addToParentRowOrColumn(this.container, createIrView());
         });
 
         createDragSource(this.container.layoutManager, this.clangirButton, () => createClangirView()).on(
@@ -868,10 +869,7 @@ export class Compiler extends MonacoPane<monaco.editor.IStandaloneCodeEditor, Co
         );
 
         this.clangirButton.on('click', () => {
-            const insertPoint =
-                this.hub.findParentRowOrColumn(this.container.parent) ||
-                this.container.layoutManager.root.contentItems[0];
-            insertPoint.addChild(createClangirView());
+            this.hub.addToParentRowOrColumn(this.container, createClangirView());
         });
 
         createDragSource(this.container.layoutManager, this.optPipelineButton, () => createOptPipelineView()).on(
@@ -880,10 +878,7 @@ export class Compiler extends MonacoPane<monaco.editor.IStandaloneCodeEditor, Co
         );
 
         this.optPipelineButton.on('click', () => {
-            const insertPoint =
-                this.hub.findParentRowOrColumn(this.container.parent) ||
-                this.container.layoutManager.root.contentItems[0];
-            insertPoint.addChild(createOptPipelineView());
+            this.hub.addToParentRowOrColumn(this.container, createOptPipelineView());
         });
 
         createDragSource(this.container.layoutManager, this.deviceButton, () => createDeviceView()).on(
@@ -892,10 +887,7 @@ export class Compiler extends MonacoPane<monaco.editor.IStandaloneCodeEditor, Co
         );
 
         this.deviceButton.on('click', () => {
-            const insertPoint =
-                this.hub.findParentRowOrColumn(this.container.parent) ||
-                this.container.layoutManager.root.contentItems[0];
-            insertPoint.addChild(createDeviceView());
+            this.hub.addToParentRowOrColumn(this.container, createDeviceView());
         });
 
         createDragSource(this.container.layoutManager, this.rustMirButton, () => createRustMirView()).on(
@@ -904,10 +896,7 @@ export class Compiler extends MonacoPane<monaco.editor.IStandaloneCodeEditor, Co
         );
 
         this.rustMirButton.on('click', () => {
-            const insertPoint =
-                this.hub.findParentRowOrColumn(this.container.parent) ||
-                this.container.layoutManager.root.contentItems[0];
-            insertPoint.addChild(createRustMirView());
+            this.hub.addToParentRowOrColumn(this.container, createRustMirView());
         });
 
         createDragSource(this.container.layoutManager, this.haskellCoreButton, () => createHaskellCoreView()).on(
@@ -916,10 +905,7 @@ export class Compiler extends MonacoPane<monaco.editor.IStandaloneCodeEditor, Co
         );
 
         this.haskellCoreButton.on('click', () => {
-            const insertPoint =
-                this.hub.findParentRowOrColumn(this.container.parent) ||
-                this.container.layoutManager.root.contentItems[0];
-            insertPoint.addChild(createHaskellCoreView());
+            this.hub.addToParentRowOrColumn(this.container, createHaskellCoreView());
         });
 
         createDragSource(this.container.layoutManager, this.haskellStgButton, () => createHaskellStgView()).on(
@@ -928,10 +914,7 @@ export class Compiler extends MonacoPane<monaco.editor.IStandaloneCodeEditor, Co
         );
 
         this.haskellStgButton.on('click', () => {
-            const insertPoint =
-                this.hub.findParentRowOrColumn(this.container.parent) ||
-                this.container.layoutManager.root.contentItems[0];
-            insertPoint.addChild(createHaskellStgView());
+            this.hub.addToParentRowOrColumn(this.container, createHaskellStgView());
         });
 
         createDragSource(this.container.layoutManager, this.haskellCmmButton, () => createHaskellCmmView()).on(
@@ -940,10 +923,7 @@ export class Compiler extends MonacoPane<monaco.editor.IStandaloneCodeEditor, Co
         );
 
         this.haskellCmmButton.on('click', () => {
-            const insertPoint =
-                this.hub.findParentRowOrColumn(this.container.parent) ||
-                this.container.layoutManager.root.contentItems[0];
-            insertPoint.addChild(createHaskellCmmView());
+            this.hub.addToParentRowOrColumn(this.container, createHaskellCmmView());
         });
 
         createDragSource(this.container.layoutManager, this.leanCButton, () => createLeanCView()).on(
@@ -952,10 +932,16 @@ export class Compiler extends MonacoPane<monaco.editor.IStandaloneCodeEditor, Co
         );
 
         this.leanCButton.on('click', () => {
-            const insertPoint =
-                this.hub.findParentRowOrColumn(this.container.parent) ||
-                this.container.layoutManager.root.contentItems[0];
-            insertPoint.addChild(createLeanCView());
+            this.hub.addToParentRowOrColumn(this.container, createLeanCView());
+        });
+
+        createDragSource(this.container.layoutManager, this.jvmBytecodeButton, () => createJvmBytecodeView()).on(
+            'dragStart',
+            hidePaneAdder,
+        );
+
+        this.jvmBytecodeButton.on('click', () => {
+            this.hub.addToParentRowOrColumn(this.container, createJvmBytecodeView());
         });
 
         createDragSource(this.container.layoutManager, this.rustMacroExpButton, () => createRustMacroExpView()).on(
@@ -964,10 +950,7 @@ export class Compiler extends MonacoPane<monaco.editor.IStandaloneCodeEditor, Co
         );
 
         this.rustMacroExpButton.on('click', () => {
-            const insertPoint =
-                this.hub.findParentRowOrColumn(this.container.parent) ||
-                this.container.layoutManager.root.contentItems[0];
-            insertPoint.addChild(createRustMacroExpView());
+            this.hub.addToParentRowOrColumn(this.container, createRustMacroExpView());
         });
 
         createDragSource(this.container.layoutManager, this.rustHirButton, () => createRustHirView()).on(
@@ -976,10 +959,7 @@ export class Compiler extends MonacoPane<monaco.editor.IStandaloneCodeEditor, Co
         );
 
         this.rustHirButton.on('click', () => {
-            const insertPoint =
-                this.hub.findParentRowOrColumn(this.container.parent) ||
-                this.container.layoutManager.root.contentItems[0];
-            insertPoint.addChild(createRustHirView());
+            this.hub.addToParentRowOrColumn(this.container, createRustHirView());
         });
 
         createDragSource(this.container.layoutManager, this.clojureMacroExpButton, () =>
@@ -987,10 +967,7 @@ export class Compiler extends MonacoPane<monaco.editor.IStandaloneCodeEditor, Co
         ).on('dragStart', hidePaneAdder);
 
         this.clojureMacroExpButton.on('click', () => {
-            const insertPoint =
-                this.hub.findParentRowOrColumn(this.container.parent) ||
-                this.container.layoutManager.root.contentItems[0];
-            insertPoint.addChild(createClojureMacroExpView());
+            this.hub.addToParentRowOrColumn(this.container, createClojureMacroExpView());
         });
 
         createDragSource(this.container.layoutManager, this.yulButton, () => createYulView()).on(
@@ -999,10 +976,7 @@ export class Compiler extends MonacoPane<monaco.editor.IStandaloneCodeEditor, Co
         );
 
         this.yulButton.on('click', () => {
-            const insertPoint =
-                this.hub.findParentRowOrColumn(this.container.parent) ||
-                this.container.layoutManager.root.contentItems[0];
-            insertPoint.addChild(createYulView());
+            this.hub.addToParentRowOrColumn(this.container, createYulView());
         });
 
         createDragSource(this.container.layoutManager, this.gccDumpButton, () => createGccDumpView()).on(
@@ -1011,10 +985,7 @@ export class Compiler extends MonacoPane<monaco.editor.IStandaloneCodeEditor, Co
         );
 
         this.gccDumpButton.on('click', () => {
-            const insertPoint =
-                this.hub.findParentRowOrColumn(this.container.parent) ||
-                this.container.layoutManager.root.contentItems[0];
-            insertPoint.addChild(createGccDumpView());
+            this.hub.addToParentRowOrColumn(this.container, createGccDumpView());
         });
 
         createDragSource(this.container.layoutManager, this.gnatDebugTreeButton, () => createGnatDebugTreeView()).on(
@@ -1023,10 +994,7 @@ export class Compiler extends MonacoPane<monaco.editor.IStandaloneCodeEditor, Co
         );
 
         this.gnatDebugTreeButton.on('click', () => {
-            const insertPoint =
-                this.hub.findParentRowOrColumn(this.container.parent) ||
-                this.container.layoutManager.root.contentItems[0];
-            insertPoint.addChild(createGnatDebugTreeView());
+            this.hub.addToParentRowOrColumn(this.container, createGnatDebugTreeView());
         });
 
         createDragSource(this.container.layoutManager, this.gnatDebugButton, () => createGnatDebugView()).on(
@@ -1035,10 +1003,7 @@ export class Compiler extends MonacoPane<monaco.editor.IStandaloneCodeEditor, Co
         );
 
         this.gnatDebugButton.on('click', () => {
-            const insertPoint =
-                this.hub.findParentRowOrColumn(this.container.parent) ||
-                this.container.layoutManager.root.contentItems[0];
-            insertPoint.addChild(createGnatDebugView());
+            this.hub.addToParentRowOrColumn(this.container, createGnatDebugView());
         });
 
         createDragSource(this.container.layoutManager, this.cfgButton, () => createCfgView()).on(
@@ -1047,10 +1012,7 @@ export class Compiler extends MonacoPane<monaco.editor.IStandaloneCodeEditor, Co
         );
 
         this.cfgButton.on('click', () => {
-            const insertPoint =
-                this.hub.findParentRowOrColumn(this.container.parent) ||
-                this.container.layoutManager.root.contentItems[0];
-            insertPoint.addChild(createCfgView());
+            this.hub.addToParentRowOrColumn(this.container, createCfgView());
         });
 
         createDragSource(this.container.layoutManager, this.explainButton, () => createExplainView()).on(
@@ -1059,10 +1021,7 @@ export class Compiler extends MonacoPane<monaco.editor.IStandaloneCodeEditor, Co
         );
 
         this.explainButton.on('click', () => {
-            const insertPoint =
-                this.hub.findParentRowOrColumn(this.container.parent) ||
-                this.container.layoutManager.root.contentItems[0];
-            insertPoint.addChild(createExplainView());
+            this.hub.addToParentRowOrColumn(this.container, createExplainView());
         });
 
         createDragSource(this.container.layoutManager, this.executorButton, () => createExecutor()).on(
@@ -1071,10 +1030,7 @@ export class Compiler extends MonacoPane<monaco.editor.IStandaloneCodeEditor, Co
         );
 
         this.executorButton.on('click', () => {
-            const insertPoint =
-                this.hub.findParentRowOrColumn(this.container.parent) ||
-                this.container.layoutManager.root.contentItems[0];
-            insertPoint.addChild(createExecutor());
+            this.hub.addToParentRowOrColumn(this.container, createExecutor());
         });
 
         this.initToolButtons();
@@ -1405,6 +1361,7 @@ export class Compiler extends MonacoPane<monaco.editor.IStandaloneCodeEditor, Co
                 produceClojureMacroExp: this.clojureMacroExpViewOpen,
                 produceYul: this.yulViewOpen ? this.yulOptions : null,
                 overrides: this.getCurrentState().overrides,
+                darkBackgroundColours: this.darkBackgroundColours,
             },
             filters: this.getEffectiveFilters(),
             tools: this.getActiveTools(newTools),
@@ -1878,6 +1835,8 @@ export class Compiler extends MonacoPane<monaco.editor.IStandaloneCodeEditor, Co
         }
 
         this.compileInfoLabel.text(infoLabelText);
+        // Resize in case the compile info wraps the bottom bar onto another line
+        this.resize();
 
         this.postCompilationResult(request, result.result ?? result);
 
@@ -2570,6 +2529,7 @@ export class Compiler extends MonacoPane<monaco.editor.IStandaloneCodeEditor, Co
         this.haskellCoreButton = this.domRoot.find('.btn.view-haskellCore');
         this.haskellStgButton = this.domRoot.find('.btn.view-haskellStg');
         this.haskellCmmButton = this.domRoot.find('.btn.view-haskellCmm');
+        this.jvmBytecodeButton = this.domRoot.find('.btn.view-jvmBytecode');
         this.leanCButton = this.domRoot.find('.btn.view-leanC');
         this.clojureMacroExpButton = this.domRoot.find('.btn.view-clojuremacroexp');
         this.yulButton = this.domRoot.find('.btn.view-yul');
@@ -2710,10 +2670,7 @@ export class Compiler extends MonacoPane<monaco.editor.IStandaloneCodeEditor, Co
 
         button.on('click', () => {
             button.prop('disabled', true);
-            const insertPoint =
-                this.hub.findParentRowOrColumn(this.container.parent) ||
-                this.container.layoutManager.root.contentItems[0];
-            insertPoint.addChild(createToolView());
+            this.hub.addToParentRowOrColumn(this.container, createToolView());
         });
         button.addClass('opens-singleton-pane');
     }
@@ -2876,6 +2833,7 @@ export class Compiler extends MonacoPane<monaco.editor.IStandaloneCodeEditor, Co
         this.haskellStgButton.prop('disabled', this.haskellStgViewOpen);
         this.haskellCmmButton.prop('disabled', this.haskellCmmViewOpen);
         this.leanCButton.prop('disabled', this.leanCViewOpen);
+        this.jvmBytecodeButton.prop('disabled', this.jvmBytecodeViewOpen);
         this.rustMacroExpButton.prop('disabled', this.rustMacroExpViewOpen);
         this.rustHirButton.prop('disabled', this.rustHirViewOpen);
         this.clojureMacroExpButton.prop('disabled', this.clojureMacroExpViewOpen);
@@ -2901,6 +2859,7 @@ export class Compiler extends MonacoPane<monaco.editor.IStandaloneCodeEditor, Co
         this.haskellStgButton.toggle(!!this.compiler.supportsHaskellStgView);
         this.haskellCmmButton.toggle(!!this.compiler.supportsHaskellCmmView);
         this.leanCButton.toggle(!!this.compiler.supportsLeanCView);
+        this.jvmBytecodeButton.toggle(!!this.compiler.supportsJvmBytecodeView);
         this.clojureMacroExpButton.toggle(!!this.compiler.supportsClojureMacroExpView);
         this.yulButton.toggle(!!this.compiler.supportsYulView);
         // TODO(jeremy-rifkin): Disable cfg button when binary mode is set?
@@ -3083,6 +3042,18 @@ export class Compiler extends MonacoPane<monaco.editor.IStandaloneCodeEditor, Co
         this.eventHub.on('haskellStgViewClosed', this.onHaskellStgViewClosed, this);
         this.eventHub.on('haskellCmmViewOpened', this.onHaskellCmmViewOpened, this);
         this.eventHub.on('haskellCmmViewClosed', this.onHaskellCmmViewClosed, this);
+        this.eventHub.on('jvmBytecodeViewOpened', id => {
+            if (id === this.id) {
+                this.jvmBytecodeViewOpen = true;
+                this.jvmBytecodeButton.prop('disabled', true);
+            }
+        });
+        this.eventHub.on('jvmBytecodeViewClosed', id => {
+            if (id === this.id) {
+                this.jvmBytecodeViewOpen = false;
+                this.jvmBytecodeButton.prop('disabled', false);
+            }
+        });
         this.eventHub.on('leanCViewOpened', this.onLeanCViewOpened, this);
         this.eventHub.on('leanCViewClosed', this.onLeanCViewClosed, this);
         this.eventHub.on('leanCViewOptionsUpdated', this.onLeanCViewOptionsUpdated, this);
@@ -3115,6 +3086,7 @@ export class Compiler extends MonacoPane<monaco.editor.IStandaloneCodeEditor, Co
             }
         });
         this.eventHub.on('languageChange', this.onLanguageChange, this);
+        this.eventHub.on('themeChange', this.onThemeChange, this);
 
         this.eventHub.on('initialised', this.undefer, this);
 
@@ -3521,6 +3493,13 @@ export class Compiler extends MonacoPane<monaco.editor.IStandaloneCodeEditor, Co
         }
     }
 
+    onThemeChange(newTheme: Theme | null): void {
+        const darkBackgroundColours = newTheme?.darkBackgroundColours ?? false;
+        if (darkBackgroundColours === this.darkBackgroundColours) return;
+        this.darkBackgroundColours = darkBackgroundColours;
+        if (this.compiler?.supportsDarkBackgroundColours) this.compile();
+    }
+
     override onSettingsChange(newSettings: SiteSettings): void {
         const before = this.settings;
         this.settings = {...newSettings};
@@ -3794,9 +3773,8 @@ export class Compiler extends MonacoPane<monaco.editor.IStandaloneCodeEditor, Co
                 this.updateState();
                 this.updateCompilerUI();
                 this.setAssembly({asm: this.fakeAsm('')});
-                // this is a workaround to delay compilation further until the Editor sends a compile request
-                this.needsCompile = false;
-
+                // The libraries widget asks for a compile whenever its language changes, whatever compileOnChange says
+                if (!this.settings.compileOnChange) this.needsCompile = false;
                 this.undefer();
                 this.sendCompiler();
             });

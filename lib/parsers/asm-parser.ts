@@ -74,8 +74,9 @@ export class AsmParser extends AsmRegex implements IAsmParser {
     protected definesWeak: RegExp;
     protected definesAlias: RegExp;
     protected indentedLabelDef: RegExp;
+    protected indentedLocalLabelDef: RegExp;
     protected assignmentDef: RegExp;
-    protected setDef: RegExp;
+    protected setDefs: RegExp[];
     protected directive: RegExp;
     protected startAppBlock: RegExp;
     protected endAppBlock: RegExp;
@@ -159,7 +160,7 @@ export class AsmParser extends AsmRegex implements IAsmParser {
                 this.directive.test(line) &&
                 !this.instOpcodeRe.test(line) &&
                 !this.definesAlias.test(line) &&
-                !this.setDef.test(line)
+                !this.isSetDef(line)
             ) {
                 return true;
             }
@@ -178,12 +179,12 @@ export class AsmParser extends AsmRegex implements IAsmParser {
         asmLength: number,
     ): {match: RegExpMatchArray | null; skipLine: boolean} {
         let match = line.match(this.labelDef);
-        if (!match) match = line.match(this.assignmentDef);
         let isSetDef = false;
         if (!match) {
-            match = line.match(this.setDef);
+            match = this.matchSetDef(line);
             isSetDef = !!match;
         }
+        if (!match) match = line.match(this.assignmentDef);
         if (!match) {
             match = line.match(this.cudaBeginDef);
             if (match) {
@@ -252,6 +253,7 @@ export class AsmParser extends AsmRegex implements IAsmParser {
             }
 
             if (this.parsingState.isInCustomAssembly()) line = this.fixLabelIndentation(line);
+            else line = this.fixLocalLabelIndentation(line);
 
             const labelResult = this.processLabelDefinition(
                 line,
@@ -369,14 +371,20 @@ export class AsmParser extends AsmRegex implements IAsmParser {
         this.identifierFindRe = /((?!\$\.)[$.@A-Z_a-z"][\w$.]*"?)(?:@\w+)*/g;
         this.hasNvccOpcodeRe = /^\s*[@A-Za-z|]/;
         this.definesFunction = /^\s*\.(type.*,\s*[#%@]function|proc\s+[.A-Z_a-z][\w$.]*:.*)$/;
-        this.definesGlobal = /^\s*\.(?:globa?l|GLB|export)\s*([.A-Z_a-z][\w$.]*|"[.A-Z_a-z][\w$.]*")/;
-        this.definesWeak = /^\s*\.(?:weakext|weak)\s*([.A-Z_a-z][\w$.]*|"[.A-Z_a-z][\w$.]*")/;
+        this.definesGlobal = /^\s*\.(?:globa?l|GLB|export)\s*([.@A-Z_a-z][\w$.@]*|"[.@A-Z_a-z][\w$.@]*")/;
+        this.definesWeak = /^\s*\.(?:weakext|weak)\s*([.@A-Z_a-z][\w$.@]*|"[.@A-Z_a-z][\w$.@]*")/;
         this.definesAlias = /^\s*\.set\s*((?:[.A-Z_a-z][\w$.]*|"[.A-Z_a-z][\w$.]*")\s*),\s*\.\s*(\+\s*0)?$/;
         this.indentedLabelDef = /^\s*([$.A-Z_a-z][\w$.]*|"[$.A-Z_a-z][\w$.]*"):/;
+        // Outside #APP only `.`-prefixed local labels are de-indented: some output still carries source text
+        // (V8 echoes the JS source, for example) where an indented `key: value` is not a label definition.
+        this.indentedLocalLabelDef = /^\s+\.[\w$.]+:/;
         this.assignmentDef = /^\s*([$.A-Z_a-z][\w$.]*)\s*=\s*(.*)/;
-        // ".set label, label" where "label" is `this.labelFindNonMips`
-        this.setDef =
-            /^\s*\.set\s+([.A-Z_a-z][\w$.]*|"[.A-Z_a-z][\w$.]*"),\s*(?:[.A-Z_a-z][\w$.]*|"[.A-Z_a-z][\w$.]*")\s*$/;
+        this.setDefs = [
+            // ".set label, label" where "label" is `this.labelFindNonMips`
+            /^\s*\.set\s+([.A-Z_a-z][\w$.]*|"[.A-Z_a-z][\w$.]*"),\s*(?:[.A-Z_a-z][\w$.]*|"[.A-Z_a-z][\w$.]*")\s*$/,
+            // "label = label" where "label" is `this.labelFindNonMips`
+            /^\s*([.A-Z_a-z][\w$.]*|"[.A-Z_a-z][\w$.]*")\s*=\s*([.A-Z_a-z][\w$.]*|"[.A-Z_a-z][\w$.]*")\s*$/,
+        ];
         this.directive = /^\s*\..*$/;
         // These four regexes when phrased as /\s*#APP.*/ etc exhibit costly polynomial backtracking. Instead use ^$ and
         // test with regex.test(line.trim()), more robust anyway
@@ -450,11 +458,26 @@ export class AsmParser extends AsmRegex implements IAsmParser {
         if (this.instOpcodeRe.test(line)) return true;
         // Detect assignment, that's not an opcode...
         if (this.assignmentDef.test(line)) return false;
-        if (this.setDef.test(line)) return false;
+        if (this.isSetDef(line)) return false;
         if (inNvccCode) {
             return this.hasNvccOpcodeRe.test(line);
         }
         return this.hasOpcodeRe.test(line);
+    }
+
+    private matchSetDef(line: string) {
+        for (const setDef of this.setDefs) {
+            const match = line.match(setDef);
+            if (match) return match;
+        }
+        return null;
+    }
+
+    private isSetDef(line: string): boolean {
+        for (const setDef of this.setDefs) {
+            if (setDef.test(line)) return true;
+        }
+        return false;
     }
 
     private createLabelContext(): LabelContext {
@@ -482,6 +505,7 @@ export class AsmParser extends AsmRegex implements IAsmParser {
             startBlock: this.startBlock,
             endBlock: this.endBlock,
             fixLabelIndentation: this.fixLabelIndentation.bind(this),
+            fixLocalLabelIndentation: this.fixLocalLabelIndentation.bind(this),
         };
     }
 
@@ -619,6 +643,10 @@ export class AsmParser extends AsmRegex implements IAsmParser {
     fixLabelIndentation(line: string) {
         const match = line.match(this.indentedLabelDef);
         return match ? line.replace(/^\s+/, '') : line;
+    }
+
+    fixLocalLabelIndentation(line: string) {
+        return this.indentedLocalLabelDef.test(line) ? line.replace(/^\s+/, '') : line;
     }
 
     isUserFunction(func: string) {

@@ -171,6 +171,10 @@ The filters are a JSON object with `true`/`false` values. If not supplied, defau
 filters override their default values. The `compilerOptions` is used to pass extra arguments to the back end, and is
 probably not useful for most REST users.
 
+Set `compilerOptions.darkBackgroundColours` to `true` when the output will be shown on a dark background. A compiler
+whose `supportsDarkBackgroundColours` is set then colours its output to suit one, and colours it for a light background
+otherwise. Other compilers ignore it.
+
 To force a cache bypass, `bypassCache` can be set. This accepts an enum value according to:
 
 ```ts
@@ -276,6 +280,9 @@ structure:
     "type": "rustfmt"
 }
 ```
+
+Formatters with styles backed by a style file on the server also have a `styleFiles` object, mapping each such style
+name to its file path.
 
 The name property corresponds to the `<formatter>` when requesting `POST /api/format/<formatter>`. The `type` key in the
 JSON request corresponds to one of the `formatters.<key>.type` found in the compiler-explorer configuration properties
@@ -481,6 +488,8 @@ An example of one the easiest forms of a clientstate:
   ]
 }
 ```
+
+`compilers` and `executors` are optional; a session without either opens as just an editor.
 
 **Usage Examples:**
 

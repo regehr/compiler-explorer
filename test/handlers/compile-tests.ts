@@ -22,13 +22,18 @@
 // ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE
 // POSSIBILITY OF SUCH DAMAGE.
 
+import fs from 'node:fs/promises';
+
 import express, {Express} from 'express';
 import request from 'supertest';
-import {beforeAll, describe, expect, it, vi} from 'vitest';
+import {afterEach, beforeAll, describe, expect, it, vi} from 'vitest';
 
+import type {BaseCompiler} from '../../lib/base-compiler.js';
+import {FakeCompiler} from '../../lib/compilers/fake-for-test.js';
 import {CompileHandler, SetTestMode} from '../../lib/handlers/compile.js';
 import {fakeProps} from '../../lib/properties.js';
 import {ActiveTool, BypassCache, LegacyCompatibleActiveTool} from '../../types/compilation/compilation.interfaces.js';
+import type {PreliminaryCompilerInfo} from '../../types/compiler.interfaces.js';
 import {makeCompilationEnvironment} from '../utils.js';
 
 SetTestMode();
@@ -327,6 +332,19 @@ describe('Compiler tests', () => {
                 });
         });
 
+        it('responds with an error when the result cannot be serialised', async () => {
+            await setFakeResult({
+                code: 0,
+                toJSON() {
+                    throw new RangeError('Invalid string length');
+                },
+            });
+            const res = await makeFakeJson('I am a program').expect(200);
+            const body = JSON.parse(res.text);
+            expect(body.code).toEqual(-1);
+            expect(body.stderr[0].text).toContain('RangeError: Invalid string length');
+        });
+
         it('parses options and filters', async () => {
             await setFakeResult();
             const res = await makeFakeJson('I am a program', {
@@ -466,7 +484,8 @@ describe('Compiler tests', () => {
 
         it('error on empty request body', async () => {
             await setFakeResult();
-            await request(app).post('/fake-for-test/compile').set('Accept', 'application/json').expect(500);
+            const res = await request(app).post('/fake-for-test/compile').set('Accept', 'application/json').expect(400);
+            expect(res.body).toEqual({error: true, message: 'No source found in request'});
         });
 
         it('handles filters set directly', async () => {
@@ -558,6 +577,42 @@ describe('Compiler tests', () => {
             await setFakeCompilers();
             const res = await makeFakeJson('a', 'b');
             expect(res.body.asm).toEqual([{text: 'LANG B but A'}]);
+        });
+    });
+
+    describe('Compiler executable discovery', () => {
+        afterEach(() => vi.restoreAllMocks());
+
+        function makeCompiler(skipExeCheck: boolean): PreliminaryCompilerInfo {
+            return {
+                id: 'remote-only',
+                lang: 'a',
+                exe: '/remote-only/compiler',
+                compilerType: 'fake-for-test',
+                skipExeCheck,
+            } as unknown as PreliminaryCompilerInfo;
+        }
+
+        it('initialises a compiler that skips the exe check without statting it', async () => {
+            const stat = vi.spyOn(fs, 'stat');
+            const initialise = vi.spyOn(FakeCompiler.prototype, 'initialise').mockResolvedValue({} as BaseCompiler);
+
+            const compiler = await compileHandler.create(makeCompiler(true));
+
+            expect(compiler).not.toBeNull();
+            expect(stat).not.toHaveBeenCalled();
+            expect(initialise).toHaveBeenCalledWith(expect.any(Date), null, false);
+        });
+
+        it('still rejects a missing local compiler exe', async () => {
+            const stat = vi.spyOn(fs, 'stat').mockRejectedValue(new Error('ENOENT'));
+            const initialise = vi.spyOn(FakeCompiler.prototype, 'initialise');
+
+            const compiler = await compileHandler.create(makeCompiler(false));
+
+            expect(compiler).toBeNull();
+            expect(stat).toHaveBeenCalledWith('/remote-only/compiler');
+            expect(initialise).not.toHaveBeenCalled();
         });
     });
 });
