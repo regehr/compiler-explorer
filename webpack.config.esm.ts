@@ -167,7 +167,9 @@ export default {
                 vendors: {
                     test: /[/\\]node_modules[/\\]/,
                     name: 'vendor',
-                    chunks: 'all',
+                    // 'all' would also pull node_modules out of lazy and worker chunks into this one, which every
+                    // page loads up front: Monaco's ~6 MiB TypeScript language service, for one.
+                    chunks: 'initial',
                     priority: -10,
                 },
             },
