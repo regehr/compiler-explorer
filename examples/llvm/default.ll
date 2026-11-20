@@ -12,6 +12,8 @@
 ;    try to show that the optimized function(s)
 ;    refine the original one(s).
 
+; llubi and alive-exec are also available here
+
 define i32 @src(i32 %x) {
   %r = udiv i32 %x, 8192
   ret i32 %r
@@ -22,6 +24,7 @@ define i32 @tgt(i32 %x) {
   ret i32 %r
 }
 
+; main() is for llubi and alive-exec
 define i32 @main() {
   %x = freeze i32 poison
   %rs = udiv i32 %x, 8192
@@ -39,8 +42,6 @@ define i32 @main() {
 ; consider passing the --disable-undef-input flag
 ; to alive-tv. Avoiding the need to reason about
 ; undef tends to make Alive2 a lot faster.
-
-; alive-exec and llubi are also available here
 
 ; Hosting is provided by Google
 ; This instance is administered by John Regehr
