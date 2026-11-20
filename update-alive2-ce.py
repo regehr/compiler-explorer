@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Update the Alive2 Compiler Explorer instance to the latest LLVM main and Alive2 master.
+"""Update the Alive2 Compiler Explorer instance to the latest LLVM main and Alive2 arm-tv.
 
 Run as yourself (not root); it calls sudo only for the steps that touch /opt and systemd.
 
@@ -22,9 +22,11 @@ LLVM_BUILD = LLVM_SRC / "build"
 ALIVE2_SRC = Path.home() / "alive2"
 ALIVE2_BUILD = ALIVE2_SRC / "build"
 ALIVE2_REPO = "https://github.com/regehr/alive2.git"
+# arm-tv is a superset of master that adds backend-tv, the AArch64/RISC-V backend translation validator
+ALIVE2_BRANCH = "arm-tv"
 
 # The Alive2 binaries Compiler Explorer runs, built and installed into each release
-ALIVE2_TOOLS = ["alive-tv", "alive-exec"]
+ALIVE2_TOOLS = ["alive-tv", "alive-exec", "backend-tv"]
 
 # Leave most cores to the running Compiler Explorer instance
 JOBS = 16
@@ -45,6 +47,14 @@ ALIVE_EXEC_TEST = """
 define i32 @main() {
   %x = add i32 40, 2
   ret i32 %x
+}
+"""
+# Something both lifters handle; backend-tv checks the lifted assembly against this as the source
+BACKEND_TV_TEST = """
+define i32 @f(i32 %x, i32 %y) {
+  %s = add i32 %x, %y
+  %r = shl i32 %s, 1
+  ret i32 %r
 }
 """
 CLANG_TEST = "#include <stdint.h>\nint32_t f(int32_t x) { return x + 1; }\n"
@@ -108,10 +118,10 @@ def main():
     step("Pulling LLVM main")
     git_pull(LLVM_SRC, "main")
 
-    step("Pulling Alive2 master")
+    step(f"Pulling Alive2 {ALIVE2_BRANCH}")
     if not ALIVE2_SRC.exists():
-        run(["git", "clone", ALIVE2_REPO, ALIVE2_SRC], "cloning Alive2")
-    git_pull(ALIVE2_SRC, "master")
+        run(["git", "clone", "-b", ALIVE2_BRANCH, ALIVE2_REPO, ALIVE2_SRC], "cloning Alive2")
+    git_pull(ALIVE2_SRC, ALIVE2_BRANCH)
 
     step("Building LLVM")
     run(["ninja", "-C", LLVM_BUILD, "-j", JOBS], "LLVM build")
@@ -124,9 +134,18 @@ def main():
     # LLVM moves to a new directory every run, so start from a clean Alive2 build dir
     shutil.rmtree(ALIVE2_BUILD, ignore_errors=True)
     # Alive2 builds with -Werror, and GCC 12 has false-positive -Wrestrict warnings in libstdc++'s std::string;
-    # Alive2 puts our CMAKE_CXX_FLAGS after its own, so -Wno-error wins
+    # Alive2 puts our CMAKE_CXX_FLAGS after its own, so -Wno-error wins.
+    # backend-tv's lifter, which arm-tv links into every tool, includes LLVM's private AArch64 headers (some of
+    # them generated), and cmake --install doesn't ship those. Take them from the source and build trees that
+    # were just installed, so they match exactly. Only headers come from there: linking and RPATH still use the
+    # release, because the build tree's shared libraries change under us on the next run.
+    private_includes = [LLVM_SRC / "llvm/lib", LLVM_SRC / "llvm/lib/Target/AArch64",
+                        LLVM_BUILD / "lib", LLVM_BUILD / "lib/Target/AArch64"]
+    cxx_flags = " ".join(["-Wno-error", *(f"-I{d}" for d in private_includes)])
+    # ASLP needs ANTLR, aslp-cpp and a running aslp-server; without it the AArch64 lifter uses its own semantics
     run(["cmake", "-G", "Ninja", "-S", ALIVE2_SRC, "-B", ALIVE2_BUILD, "-DCMAKE_BUILD_TYPE=Release", "-DBUILD_TV=1",
-         "-DCMAKE_CXX_FLAGS=-Wno-error", f"-DLLVM_DIR={rel}/latest-llvm/lib/cmake/llvm"], "Alive2 configure")
+         "-DENABLE_ASLP=OFF", f"-DCMAKE_CXX_FLAGS={cxx_flags}", f"-DLLVM_DIR={rel}/latest-llvm/lib/cmake/llvm"],
+        "Alive2 configure")
     run(["ninja", "-C", ALIVE2_BUILD, "-j", JOBS, *ALIVE2_TOOLS], "Alive2 build")
     (rel / "alive2" / "build").mkdir(parents=True)
     for tool in ALIVE2_TOOLS:
@@ -151,6 +170,14 @@ def main():
             raise Failed(f"alive-exec smoke test failed: {e}")
     if res.returncode != 42 or "Returned #x0000002a / non-poison=true" not in res.stdout:
         raise Failed(f"alive-exec smoke test gave unexpected result (exit {res.returncode}):\n{res.stdout}{res.stderr}")
+    with tempfile.NamedTemporaryFile("w", suffix=".ll") as f:
+        f.write(BACKEND_TV_TEST)
+        f.flush()
+        for backend in ("aarch64", "riscv64"):
+            out = run([rel / "alive2/build/backend-tv", "--terse", f"--backend={backend}", f.name],
+                      f"backend-tv {backend} smoke test", capture_output=True, text=True).stdout
+            if "seems to be correct" not in out:
+                raise Failed(f"backend-tv {backend} smoke test gave unexpected output:\n{out}")
     run(["sudo", "chown", "-R", "root:root", rel], "making the release root-owned")
 
     # Point of no return: everything below touches production

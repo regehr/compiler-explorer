@@ -12,8 +12,6 @@
 ;    try to show that the optimized function(s)
 ;    refine the original one(s).
 
-; llubi and alive-exec are also available here
-
 define i32 @src(i32 %x) {
   %r = udiv i32 %x, 8192
   ret i32 %r
@@ -37,6 +35,12 @@ define i32 @main() {
 ; instruction in @src above into an sdiv (signed
 ; divide) and then fix @tgt so that the optimization
 ; is again correct.
+
+; other available tools:
+; - llubi
+; - alive-exec
+; - backend-tv -- experimental translation validation
+;   for the RV64 and AArch64 backends
 
 ; HINT: If you are running into timeouts, please
 ; consider passing the --disable-undef-input flag

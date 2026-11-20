@@ -22,13 +22,22 @@
 // ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE
 // POSSIBILITY OF SUCH DAMAGE.
 
-import {beforeAll, describe, expect, it} from 'vitest';
+import fs from 'node:fs/promises';
+import path from 'node:path';
+
+import {afterEach, beforeAll, describe, expect, it, vi} from 'vitest';
 
 import {CompilationEnvironment} from '../lib/compilation-env.js';
-import {aliveTimeoutMessage} from '../lib/compilers/alive-tv.js';
-import {AliveExecCompiler, AliveTvCompiler} from '../lib/compilers/index.js';
-import type {CompilationResult} from '../types/compilation/compilation.interfaces.js';
-import {makeCompilationEnvironment, makeFakeCompilerInfo, makeFakeParseFiltersAndOutputOptions} from './utils.js';
+import {aliveTimeoutMessage, backendTvTimeoutMessage} from '../lib/compilers/alive-tv.js';
+import {AliveExecCompiler, AliveTvCompiler, BackendTvCompiler, getCompilerTypeByKey} from '../lib/compilers/index.js';
+import type {CompilationResult, ExecutionOptionsWithEnv} from '../types/compilation/compilation.interfaces.js';
+import type {UnprocessedExecResult} from '../types/execution/execution.interfaces.js';
+import {
+    makeCompilationEnvironment,
+    makeFakeCompilerInfo,
+    makeFakeParseFiltersAndOutputOptions,
+    newTempDir,
+} from './utils.js';
 
 const languages = {
     llvm: {id: 'llvm'},
@@ -171,5 +180,97 @@ describe('alive-exec compiler', () => {
             asm: '<Compilation failed>',
         } as CompilationResult);
         expect((result.asm as {text: string}[]).map(line => line.text)).toEqual(aliveTimeoutMessage.split('\n'));
+    });
+});
+
+describe('backend-tv compiler', () => {
+    function makeCompiler(options = '') {
+        const info = makeFakeCompilerInfo({exe: '/opt/alive2/backend-tv', lang: languages.llvm.id, options});
+        return new BackendTvCompiler(info, makeCompilationEnvironment({languages}));
+    }
+
+    function makeExecResult(code: number, stdout: string, stderr = ''): UnprocessedExecResult {
+        return {
+            code,
+            okToCache: true,
+            filenameTransform: filename => filename,
+            stdout,
+            stderr,
+            execTime: 0,
+            timedOut: false,
+            truncated: false,
+        };
+    }
+
+    async function run(compiler: BackendTvCompiler, makeResult: (inputFilename: string) => UnprocessedExecResult) {
+        const dir = newTempDir();
+        const inputFilename = path.join(dir, 'example.ll');
+        vi.spyOn(compiler, 'exec').mockResolvedValue(makeResult(inputFilename));
+        const result = await compiler.runCompiler('/opt/alive2/backend-tv', ['--terse', inputFilename], inputFilename, {
+            env: {},
+        } as ExecutionOptionsWithEnv);
+        const outputFile = await fs.readFile(compiler.getOutputFilename(dir, compiler.outputFilebase), 'utf8');
+        return {result, outputFile};
+    }
+
+    afterEach(() => vi.restoreAllMocks());
+
+    // ---- Arguments ----
+
+    it('is registered as the backend-tv compiler type', () => {
+        expect(getCompilerTypeByKey('backend-tv')).toBe(BackendTvCompiler);
+    });
+
+    it('should ask for terse output and an SMT timeout, but no output file', () => {
+        const filters = makeFakeParseFiltersAndOutputOptions({intel: true});
+        expect(makeCompiler().optionsForFilter(filters, 'output.txt')).toEqual(['--smt-to=50000', '--terse']);
+    });
+
+    it('should put the configured backend after its own options and the user options after both', () => {
+        const filters = makeFakeParseFiltersAndOutputOptions({intel: true});
+        const args = makeCompiler('--backend=riscv64').prepareArguments(
+            ['--terse=false'],
+            filters,
+            {},
+            'example.ll',
+            'output.txt',
+            [],
+            [],
+        );
+        expect(args).toEqual(['--smt-to=50000', '--terse', '--backend=riscv64', '--terse=false', 'example.ll']);
+    });
+
+    // ---- Output ----
+
+    it('should write the report to the output file and show nothing else on success', async () => {
+        const report = 'Transformation seems to be correct!\n';
+        const {result, outputFile} = await run(makeCompiler(), () => makeExecResult(0, report));
+        expect(outputFile).toBe(report);
+        expect(result.code).toBe(0);
+        expect(result.stdout).toEqual([]);
+        expect(result.stderr).toEqual([]);
+    });
+
+    it('should carry the report as compiler output when the lifter gives up, since the main pane is emptied', async () => {
+        const {result} = await run(makeCompiler(), () => makeExecResult(255, '\nERROR: varargs not supported\n\n'));
+        expect(result.code).toBe(255);
+        expect(result.stderr.map(line => line.text)).toContain('ERROR: varargs not supported');
+    });
+
+    it('should mask the temporary input path in the report, including what came on stderr', async () => {
+        const {outputFile} = await run(makeCompiler(), inputFilename =>
+            makeExecResult(0, 'Summary:\n', `Could not read bitcode from '${inputFilename}'\n`),
+        );
+        expect(outputFile).toBe("Summary:\nCould not read bitcode from '<source>'\n");
+    });
+
+    it('should replace the output with its own advice when backend-tv times out', () => {
+        const result = makeCompiler().postCompilationPreCacheHook({
+            code: -1,
+            timedOut: true,
+            asm: '<Compilation failed>',
+        } as CompilationResult);
+        expect((result.asm as {text: string}[]).map(line => line.text)).toEqual(backendTvTimeoutMessage.split('\n'));
+        expect(backendTvTimeoutMessage).not.toContain('--disable-undef-input');
     });
 });
